@@ -1,0 +1,7 @@
+{
+  "name": "LuminaDrive - Personal Image Hosting",
+  "description": "A high-performance personal image hosting platform with AI-powered tagging, custom URL slugs, and instant link sharing.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
