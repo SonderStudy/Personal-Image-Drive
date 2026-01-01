@@ -38,7 +38,6 @@ export default function App() {
     if (!selectedFile || uploading) return;
     setUploading(true);
 
-    // 重要修复：先添加文本字段，最后添加文件字段
     const formData = new FormData();
     formData.append('pathPrefix', prefix);
     formData.append('slug', slug);
@@ -85,14 +84,18 @@ export default function App() {
     
     const btn = e.currentTarget;
     const originalText = btn.innerText;
-    const fullUrl = text.startsWith('http') ? text : window.location.origin + text;
+    
+    // 修复逻辑：判断是否已经是完整 URL 或 Markdown 格式
+    const isFullUrl = text.startsWith('http');
+    const isMarkdown = text.startsWith('![');
+    const finalCopyText = (isFullUrl || isMarkdown) ? text : (window.location.origin + text);
 
     try {
       if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(fullUrl);
+        await navigator.clipboard.writeText(finalCopyText);
       } else {
         const textArea = document.createElement("textarea");
-        textArea.value = fullUrl;
+        textArea.value = finalCopyText;
         textArea.style.position = "fixed";
         textArea.style.left = "-9999px";
         textArea.style.top = "0";
@@ -121,7 +124,7 @@ export default function App() {
           <h1 className="text-3xl font-black tracking-tighter gradient-text">LuminaDrive</h1>
           <div className="flex items-center gap-2 mt-1">
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
-            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Cloud Node v3.2 Production</span>
+            <span className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">Cloud Node v3.2.2 Production</span>
           </div>
         </div>
         <div className="bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-2 text-[10px] text-slate-400 font-mono">
