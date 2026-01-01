@@ -12,6 +12,7 @@
             font-family: 'Inter', sans-serif;
             background-color: #0f172a;
             color: #f8fafc;
+            margin: 0;
         }
         .glass {
             background: rgba(30, 41, 59, 0.7);
@@ -38,7 +39,12 @@
 </script>
 </head>
 <body>
-    <div id="root"></div>
+    <div id="root">
+        <!-- 初始加载状态，如果一直显示这个，说明 JS 没执行 -->
+        <div style="display: flex; justify-content: center; align-items: center; height: 100vh; color: #64748b;">
+            Loading application...
+        </div>
+    </div>
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>

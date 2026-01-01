@@ -10,7 +10,6 @@ const app = express();
 const PORT = process.env.PORT || 3003;
 const STORAGE_ROOT = path.join(__dirname, 'storage');
 
-// 1. 目录初始化
 const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) {
     try {
@@ -25,10 +24,9 @@ ensureDir(STORAGE_ROOT);
 app.use(cors());
 app.use(express.json());
 
-// 确定源码根目录
 const publicPath = __dirname;
 
-// 2. 高可靠即时转译中间件
+// 即时转译中间件 (V1.3)
 app.use((req, res, next) => {
   const urlPath = req.path;
   const ext = path.extname(urlPath);
@@ -36,38 +34,33 @@ app.use((req, res, next) => {
   if (ext === '.tsx' || ext === '.ts') {
     const filePath = path.join(publicPath, urlPath);
     
-    console.log(`[Transpiler] 🔍 处理请求: ${urlPath}`);
-
     if (fs.existsSync(filePath)) {
       try {
         const content = fs.readFileSync(filePath, 'utf8');
-        
-        // 【核心修复】jsx 选项改为 'transform'
         const result = esbuild.transformSync(content, {
           loader: ext === '.ts' ? 'ts' : 'tsx',
           format: 'esm',
           target: 'es2020',
-          jsx: 'transform', 
+          jsx: 'transform',
           define: {
             'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
           }
         });
 
+        // 关键：禁用缓存，确保修改立即生效
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-        console.log(`[Transpiler] ✅ 编译成功: ${urlPath}`);
         return res.send(result.code);
       } catch (err) {
-        console.error(`[Transpiler] ❌ 编译失败 ${urlPath}:`, err.message);
+        console.error(`[Transpiler] ❌ Error: ${urlPath}`, err.message);
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-        // 将错误输出到浏览器控制台，方便调试
-        return res.status(500).send(`console.error("LuminaDrive Transpile Error: ${err.message.replace(/"/g, '\\"')}");`);
+        return res.status(500).send(`console.error("Transpile Error: ${err.message.replace(/"/g, '\\"')}");`);
       }
     }
   }
   next();
 });
 
-// 3. 上传接口
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const targetDir = path.join(STORAGE_ROOT, req.body.pathPrefix || 'img');
@@ -79,16 +72,13 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage });
 
 app.post('/api/upload', upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   res.json({
     message: 'Success',
-    file: {
-      path: req.file.path.replace(STORAGE_ROOT, ''),
-      filename: req.file.filename
-    }
+    file: { path: req.file.path.replace(STORAGE_ROOT, ''), filename: req.file.filename }
   });
 });
 
@@ -105,10 +95,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
-  -------------------------------------------------------
-  🚀 LuminaDrive 后端已就绪 (v1.2)
-  🛠 模式: 修复了 esbuild 配置错误
-  -------------------------------------------------------
-  `);
+  console.log(`🚀 LuminaDrive Backend v1.3 | Port ${PORT}`);
 });
