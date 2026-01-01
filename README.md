@@ -1,72 +1,56 @@
 
 # LuminaDrive - 个人专属智能图床
 
-LuminaDrive 是一款为高级开发者设计的个人图床应用。它集成了 Gemini AI 视觉分析功能，支持自定义域名、多级目录结构和个性化 URL Slug。
+## 🛠️ 部署与排错指南
 
-## 🌟 核心特性
-
-- **多级目录支持**：上传时通过 `pathPrefix` 自动在服务器创建文件夹，如 `img/2025/travel`。
-- **AI 智能标签**：自动分析图片内容，生成标题、描述。
-- **自定义 URL Slug**：支持手动指定文件名，URL 更美观。
-- **VPS 友好**：配套 Node.js 后端，轻松部署在自建服务器。
-
-## 🚀 VPS 部署步骤
-
-### 1. 环境准备
-确保您的 VPS 已安装 Node.js (v18+) 和 Nginx。
-
-### 2. 部署后端 (API)
+### 1. 解决端口占用 (EADDRINUSE)
+如果您看到 `address already in use` 错误，说明旧的进程没关掉：
 ```bash
-# 在 VPS 上创建目录
-mkdir -p /var/www/lumina-drive
-cd /var/www/lumina-drive
+# 查看哪个进程占用了 3001 端口
+lsof -i :3001
 
-# 复制 server.js 和 package.json 到此处
-npm install
-
-# 启动后端 (建议使用 PM2 守护进程)
-npm install -g pm2
-pm2 start server.js --name "lumina-api"
+# 直接强行杀死占用该端口的进程
+fuser -k 3001/tcp
 ```
 
-### 3. 部署前端
-将打包后的 `index.html`, `index.tsx`, `types.ts` 等文件放入 `/var/www/lumina-drive/public`。
+### 2. 文件夹权限
+确保您的文件夹权限正确，否则 Node.js 无法创建子目录：
+```bash
+# 给予当前目录及其子目录读写权限
+sudo chmod -R 777 /var/www/Personal-Image-Drive
+```
 
-### 4. Nginx 配置
-这是实现自定义域名的关键。编辑 `/etc/nginx/sites-available/lumina`：
+### 3. Nginx 配置建议
+如果您直接把文件放在 `/var/www/Personal-Image-Drive` 根目录（没有 `public` 文件夹），请修改 Nginx 配置：
 
 ```nginx
 server {
     listen 80;
     server_name pic.wildsalt.me;
 
-    # 1. 静态资源 (图片查看)
+    # 1. 静态图片访问 (直接由 Nginx 处理)
     location /img/ {
-        alias /var/www/lumina-drive/storage/img/;
+        alias /var/www/Personal-Image-Drive/storage/img/;
         autoindex off;
         expires 30d;
     }
 
-    # 2. 前端界面
+    # 2. 前端界面与 API 转发
     location / {
-        root /var/www/lumina-drive/public;
-        index index.html;
-        try_files $uri $uri/ /index.html;
-    }
-
-    # 3. 后端 API 转发
-    location /api/ {
         proxy_pass http://localhost:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+        client_max_body_size 50M; # 必须！否则大图上传会报 500
     }
 }
 ```
 
-## 🛠️ 常见问题
+### 4. 查看日志
+如果依然 500，请查看 Node 后端的实时输出：
+```bash
+# 如果使用 PM2
+pm2 logs lumina-drive
 
-**Q: 文件夹会自动建立吗？**
-A: **是的**。后端程序使用 `fs.mkdirSync(..., { recursive: true })`。无论您输入多少级目录（如 `a/b/c/d`），系统都会在上传第一张图片时自动创建整个路径。
-
-**Q: 如何修改上传限制？**
-A: 修改 `server.js` 中的 `limits: { fileSize: ... }` 即可。
+# 如果直接运行
+node server.js
+```

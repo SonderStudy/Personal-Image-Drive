@@ -9,32 +9,34 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const STORAGE_ROOT = path.join(__dirname, 'storage');
 
-// 确保存储根目录存在
-if (!fs.existsSync(STORAGE_ROOT)) {
-  fs.mkdirSync(STORAGE_ROOT, { recursive: true });
+// 1. 确保基础存储目录存在
+try {
+  if (!fs.existsSync(STORAGE_ROOT)) {
+    fs.mkdirSync(STORAGE_ROOT, { recursive: true });
+    console.log('✅ Created storage root at:', STORAGE_ROOT);
+  }
+} catch (e) {
+  console.error('❌ Failed to create storage root. Check permissions!', e);
 }
 
 app.use(cors());
 app.use(express.json());
 
-// 配置 Multer 存储
+// 2. Multer 配置：处理多级目录自动创建
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // 调试日志：检查字段是否在文件之前到达
-    console.log('Receiving upload for pathPrefix:', req.body.pathPrefix);
-    
     const pathPrefix = req.body.pathPrefix || 'uploads';
     const targetDir = path.join(STORAGE_ROOT, pathPrefix);
     
     try {
       if (!fs.existsSync(targetDir)) {
-        console.log('Creating directory:', targetDir);
         fs.mkdirSync(targetDir, { recursive: true });
+        console.log(`📂 Auto-created folder: ${targetDir}`);
       }
       cb(null, targetDir);
     } catch (err) {
-      console.error('Directory creation failed:', err);
-      cb(err);
+      console.error('❌ Directory creation failed:', err);
+      cb(new Error(`Failed to create directory: ${err.message}`));
     }
   },
   filename: function (req, file, cb) {
@@ -48,22 +50,16 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 } // 20MB
 });
 
-// 上传接口
-app.post('/api/upload', (req, res, next) => {
+// 3. API 路由
+app.post('/api/upload', (req, res) => {
   upload.single('image')(req, res, function (err) {
-    if (err instanceof multer.MulterError) {
-      console.error('Multer Error:', err);
-      return res.status(500).json({ error: `Upload error: ${err.message}` });
-    } else if (err) {
-      console.error('Unknown Error during upload:', err);
-      return res.status(500).json({ error: `Internal error: ${err.message}` });
+    if (err) {
+      console.error('❌ Multer Error:', err.message);
+      return res.status(500).json({ error: err.message });
     }
-
     if (!req.file) {
-      return res.status(400).json({ error: 'No image file found in request' });
+      return res.status(400).json({ error: 'No file uploaded' });
     }
-
-    console.log('Successfully saved:', req.file.path);
     res.json({
       message: 'Upload successful',
       file: {
@@ -74,28 +70,46 @@ app.post('/api/upload', (req, res, next) => {
   });
 });
 
-// 静态文件服务 - 用于查看已上传图片
+// 4. 静态资源服务 (图片查看)
 app.use('/storage', express.static(STORAGE_ROOT));
 
-// 静态文件服务 - 用于部署前端项目 (打包后的 dist 或 public)
-const PUBLIC_DIR = path.join(__dirname, 'public');
-if (fs.existsSync(PUBLIC_DIR)) {
-  app.use(express.static(PUBLIC_DIR));
-  app.get('*', (req, res) => {
-    res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
-  });
+// 5. 增强的静态页面服务
+// 兼容性处理：如果 public 文件夹不存在，则尝试在根目录寻找
+const PUBLIC_PATHS = [
+  path.join(__dirname, 'public'),
+  __dirname // 尝试直接在根目录查找 index.html
+];
+
+let served = false;
+for (const p of PUBLIC_PATHS) {
+  if (fs.existsSync(path.join(p, 'index.html'))) {
+    console.log(`🌐 Serving frontend from: ${p}`);
+    app.use(express.static(p));
+    app.get('*', (req, res) => res.sendFile(path.join(p, 'index.html')));
+    served = true;
+    break;
+  }
 }
 
-// 全局错误捕获器
+if (!served) {
+  console.warn('⚠️ Warning: No index.html found. Frontend might not load via Node.');
+}
+
+// 6. 全局错误捕获
 app.use((err, req, res, next) => {
-  console.error('Global Error Handler:', err);
-  res.status(500).json({ error: 'Critical server error occurred' });
+  console.error('🔥 Server Error:', err.stack);
+  res.status(500).json({ error: 'Something went wrong on the server.' });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`-------------------------------------------`);
-  console.log(`LuminaDrive Backend is LIVE!`);
-  console.log(`Port: ${PORT}`);
-  console.log(`Storage: ${STORAGE_ROOT}`);
-  console.log(`-------------------------------------------`);
+// 7. 启动并处理端口冲突提示
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🚀 LuminaDrive Backend started!`);
+  console.log(`📍 URL: http://localhost:${PORT}`);
+  console.log(`📂 Storage: ${STORAGE_ROOT}\n`);
+}).on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n❌ ERROR: Port ${PORT} is already occupied!`);
+    console.error(`💡 FIX: Run 'fuser -k ${PORT}/tcp' to free up the port, then try again.\n`);
+    process.exit(1);
+  }
 });

@@ -37,7 +37,6 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreview(reader.result as string);
-        // 生成默认 slug: 移除扩展名并转为 URL 友好格式
         const baseSlug = selectedFile.name.split('.').slice(0, -1).join('.').toLowerCase().replace(/[^a-z0-9]/g, '-');
         setSlug(baseSlug);
       };
@@ -48,7 +47,6 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
   const cleanPath = (p: string) => p.replace(/^\/+|\/+$/g, '');
   const cleanDomain = (d: string) => d.replace(/\/+$/, '');
   
-  // 实时预览生成后的 URL
   const fileExtension = file ? file.name.split('.').pop() : 'jpg';
   const finalSlug = slug.includes('.') ? slug : `${slug}.${fileExtension}`;
   const finalUrlPreview = `https://${cleanDomain(baseDomain)}/${cleanPath(pathPrefix)}/${finalSlug}`;
@@ -60,7 +58,6 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
     try {
       let metadata = { title: file.name, tags: ['manual'], description: '' };
 
-      // 1. AI 智能分析
       if (useAI && hasKey) {
         try {
           const aiResult = await analyzeImage(preview, file.name);
@@ -69,16 +66,13 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
             tags: aiResult.tags || [],
             description: aiResult.description || ''
           };
-        } catch (aiError: any) {
-          console.warn("AI Analysis skipped or failed:", aiError);
+        } catch (aiError) {
+          console.warn("AI skipped", aiError);
         }
       }
 
-      // 2. 向 VPS 后端发送文件
       try {
         const formData = new FormData();
-        // 重要：必须在 append 'image' 之前 append 文本字段
-        // 这样 Multer 的 diskStorage 才能在确定 destination 时通过 req.body 拿到这些值
         formData.append('pathPrefix', cleanPath(pathPrefix));
         formData.append('slug', finalSlug);
         formData.append('image', file);
@@ -89,12 +83,22 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
         });
 
         if (!response.ok) {
-          const errData = await response.json();
-          throw new Error(errData.error || 'Upload to VPS failed');
+          let errorMsg = `Server error (${response.status})`;
+          try {
+            const errData = await response.json();
+            errorMsg = errData.error || errorMsg;
+          } catch(e) {}
+          
+          if (response.status === 500) {
+            alert(`❌ 500 错误: 可能是后端权限不足或 Nginx 限制了文件大小。详情: ${errorMsg}`);
+          } else {
+            alert(`❌ 上传失败: ${errorMsg}`);
+          }
+          setIsUploading(false);
+          return;
         }
       } catch (e) {
-        console.error("VPS Upload Error:", e);
-        alert("VPS 上传失败，请检查后端服务是否运行或查看 F12 网络控制台。");
+        alert("❌ 无法连接到后端。请确保 Node.js 服务已启动并运行在 3001 端口。");
         setIsUploading(false);
         return;
       }
@@ -105,7 +109,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
         slug: finalSlug,
         pathPrefix: cleanPath(pathPrefix),
         baseDomain: cleanDomain(baseDomain),
-        url: preview, // 这里保留本地预览图，实际生产中可改为后端返回的真实 URL
+        url: preview,
         size: file.size,
         type: file.type,
         createdAt: Date.now(),
