@@ -9,6 +9,14 @@ const app = express();
 const PORT = 3003;
 const STORAGE_ROOT = path.join(__dirname, 'storage');
 
+// --- 访问密钥配置 ---
+// 优先从环境变量读取 AUTH_KEY，如果不存在则使用默认值
+const AUTH_KEY = process.env.AUTH_KEY || 'WildSalt2025'; 
+
+if (!process.env.AUTH_KEY) {
+  console.warn('⚠️ 警告: 未检测到环境变量 AUTH_KEY，目前正使用默认密钥。建议在 .env 文件中配置。');
+}
+
 if (!fs.existsSync(STORAGE_ROOT)) {
   fs.mkdirSync(STORAGE_ROOT, { recursive: true });
 }
@@ -16,31 +24,24 @@ if (!fs.existsSync(STORAGE_ROOT)) {
 app.use(cors());
 app.use(express.json());
 
-// --- 核心工具函数 ---
+// --- 鉴权中间件 ---
+const authMiddleware = (req, res, next) => {
+  const userKey = req.headers['x-auth-key'];
+  if (userKey === AUTH_KEY) {
+    next();
+  } else {
+    res.status(401).json({ success: false, error: 'UNAUTHORIZED_ACCESS: 无效的访问密钥' });
+  }
+};
 
+// --- 核心工具函数 ---
 const sanitizePath = (p) => p.replace(/\.\./g, '').replace(/[\\:]/g, '/').replace(/\/+/g, '/').replace(/^\//, '');
 
-/**
- * 强力清洗文件名：只保留小写字母、数字和连字符，截断长度，收缩重复
- */
 const cleanFileName = (originalName) => {
   const ext = path.extname(originalName).toLowerCase();
   let baseName = path.basename(originalName, ext);
-
-  // 1. 处理非 ASCII (如中文) 并替换特殊符号
-  // 逻辑：将非 a-z0-9 的所有内容替换为 -
-  let cleaned = baseName
-    .replace(/[^a-z0-9]/gi, '-')
-    .toLowerCase()
-    // 2. 收缩连续的 -
-    .replace(/-+/g, '-')
-    // 3. 去除首尾的 -
-    .replace(/^-|-$/g, '');
-
-  // 4. 如果清洗后为空 (比如全是中文)，降级为 asset
+  let cleaned = baseName.replace(/[^a-z0-9]/gi, '-').toLowerCase().replace(/-+/g, '-').replace(/^-|-$/g, '');
   if (!cleaned) cleaned = 'asset';
-
-  // 5. 长度截断 (50个字符以内)
   return cleaned.substring(0, 50);
 };
 
@@ -70,7 +71,7 @@ function getAllFiles(dirPath, arrayOfFiles = []) {
   return arrayOfFiles;
 }
 
-app.get('/api/files', (req, res) => {
+app.get('/api/files', authMiddleware, (req, res) => {
   try {
     const files = getAllFiles(STORAGE_ROOT);
     files.sort((a, b) => b.mtime - a.mtime);
@@ -91,48 +92,39 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     const safeName = cleanFileName(file.originalname);
-    // 批量上传通过 时间戳+随机数 彻底解决冲突
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E4);
     cb(null, `${safeName}-${uniqueSuffix}${ext}`);
   }
 });
 
-const fileFilter = (req, file, cb) => {
-  const ext = path.extname(file.originalname).toLowerCase();
-  const isAllowedMime = ALLOWED_MIME_TYPES.includes(file.mimetype);
-  const isAllowedExt = ALLOWED_EXTENSIONS.includes(ext);
-  if (isAllowedMime && isAllowedExt) {
-    cb(null, true);
-  } else {
-    cb(new Error(`不支持文件类型: ${ext}`), false);
-  }
-};
-
 const upload = multer({ 
   storage, 
-  fileFilter,
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ALLOWED_MIME_TYPES.includes(file.mimetype) && ALLOWED_EXTENSIONS.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`不支持文件类型: ${ext}`), false);
+    }
+  },
   limits: { fileSize: 50 * 1024 * 1024 } 
 });
 
-// 单文件上传路由
-app.post('/api/upload', (req, res) => {
+app.post('/api/upload', authMiddleware, (req, res) => {
   upload.single('file')(req, res, (err) => {
     if (err) return res.status(400).json({ success: false, error: err.message });
     if (!req.file) return res.status(400).json({ success: false, error: '未接收到文件' });
 
-    // 处理 Slug 自定义逻辑
     let finalPath = req.file.path;
     let finalName = req.file.filename;
 
     if (req.body.slug) {
       const ext = path.extname(req.file.path);
-      // 对用户输入的 slug 也进行一次清洗，防止恶意输入
       const cleanSlug = cleanFileName(req.body.slug);
       const newName = cleanSlug + ext;
       const newPath = path.join(path.dirname(req.file.path), newName);
       try {
         if (fs.existsSync(newPath)) {
-            // 如果别名冲突，自动加时间戳
             const conflictName = `${cleanSlug}-${Date.now()}${ext}`;
             const conflictPath = path.join(path.dirname(req.file.path), conflictName);
             fs.renameSync(req.file.path, conflictPath);
@@ -143,32 +135,27 @@ app.post('/api/upload', (req, res) => {
             finalPath = newPath;
             finalName = newName;
         }
-      } catch (e) {
-        console.error("Rename error", e);
-      }
+      } catch (e) { console.error(e); }
     }
-
     const relativePath = finalPath.replace(STORAGE_ROOT, '').replace(/\\/g, '/');
     return res.json({ success: true, url: `/storage${relativePath}` });
   });
 });
 
-// 批量上传路由
-app.post('/api/upload-bulk', (req, res) => {
+app.post('/api/upload-bulk', authMiddleware, (req, res) => {
   upload.array('files', 20)(req, res, (err) => {
     if (err) return res.status(400).json({ success: false, error: err.message });
     if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, error: '未接收到文件' });
-
     const results = req.files.map(file => {
       const relativePath = file.path.replace(STORAGE_ROOT, '').replace(/\\/g, '/');
       return { url: `/storage${relativePath}`, name: file.originalname };
     });
-
     return res.json({ success: true, files: results });
   });
 });
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+
 app.use('/storage', express.static(STORAGE_ROOT));
 
 app.use((req, res, next) => {
@@ -179,25 +166,20 @@ app.use((req, res, next) => {
         const content = fs.readFileSync(filePath, 'utf8');
         const result = esbuild.transformSync(content, {
           loader: req.path.endsWith('.tsx') ? 'tsx' : 'ts',
-          format: 'esm',
-          target: 'es2020',
-          jsx: 'transform'
+          format: 'esm', target: 'es2020', jsx: 'transform'
         });
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
         return res.send(result.code);
-      } catch (e) {
-        return res.status(500).send(e.message);
-      }
+      } catch (e) { return res.status(500).send(e.message); }
     }
   }
   next();
 });
 
 app.use(express.static(__dirname));
-
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ success: false });
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 LuminaDrive v3.7.0 [Smart Filename] on ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 WildSaltDrive SECURE on ${PORT} | Mode: ${process.env.AUTH_KEY ? 'Custom Key' : 'Default Key'}`));

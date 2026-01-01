@@ -1,22 +1,30 @@
-# LuminaDrive 部署手册 (V3.1 稳定版)
+# WildSaltDrive 部署手册 (V4.2 增强版)
+
+### 🔐 如何修改访问密码？
+应用默认密码为 `WildSalt2025`。强烈建议通过以下方式修改：
+
+#### 方法 A：使用 .env 文件 (推荐)
+1. 在项目根目录创建文件 `.env`。
+2. 写入以下内容：
+   ```env
+   AUTH_KEY=你的私密密钥
+   ```
+3. 重新运行程序。Node.js 20.6.0+ 可以直接识别，或在启动命令中指定。
+
+#### 方法 B：使用 PM2 (生产环境推荐)
+如果你使用 PM2 部署，可以直接传递环境变量：
+```bash
+AUTH_KEY="你的私密密钥" pm2 start server.js --name wildsalt
+```
 
 ### 📦 快速部署
 1. **安装环境**：`npm install`
-2. **运行服务**：`pm2 start server.js --name lumina`
+2. **运行服务**：`npm start`
 
 ### 🛠 常见问题排查
-
-#### 1. 点击复制按钮“跳转”或显示一堆文字
-*   **原因**：这通常是因为浏览器禁用了 `navigator.clipboard`（通常发生在非 HTTPS 环境下），或者旧代码中的全局事件冲突。
-*   **修复**：当前 V3.1 版本已增加显式事件传递和 `document.execCommand` 兼容性方案，请确保覆盖所有文件。
-
-#### 2. Nginx 502 错误
-*   执行 `pm2 logs lumina`。
-*   如果提示 `EADDRINUSE`，说明 3003 端口被占用，请先 `fuser -k 3003/tcp`。
-*   确保 Nginx `proxy_pass` 指向 `http://127.0.0.1:3003`。
-
-#### 3. HTTPS 建议
-*   剪贴板 API 在 HTTPS 下体验最佳。建议使用 `acme.sh` 或 `Certbot` 为域名申请证书。
+1. **无法复制直链**：确保你的域名已开启 HTTPS。浏览器出于安全考虑，只允许在安全环境下访问剪贴板。
+2. **502 Bad Gateway**：检查端口 3003 是否被占用或防火墙是否放行。
+3. **PWA 安装失败**：确保 manifest.json 和 sw.js 在根目录且能正常访问。
 
 ### 📁 文件权限
 ```bash

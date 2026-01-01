@@ -2,8 +2,17 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>WildSaltDrive | 个人智享图床</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="WildSalt">
+    <meta name="theme-color" content="#020617">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/10664/10664448.png">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
     <style>
@@ -17,6 +26,7 @@
             background-color: var(--bg-main); 
             color: #f8fafc; 
             overflow-x: hidden; 
+            -webkit-tap-highlight-color: transparent;
         }
         /* 弥散光背景 */
         .glow-bg {
@@ -77,6 +87,12 @@
             background: linear-gradient(to bottom, transparent, rgba(59, 130, 246, 0.1), transparent);
             animation: scan 2s linear infinite;
         }
+
+        /* 修复移动端安装后的安全区域 */
+        body {
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
     </style>
     <script type="importmap">
 {
@@ -94,5 +110,17 @@
     <div class="glow-bg"></div>
     <div id="root"></div>
     <script type="module" src="./index.tsx"></script>
+    <script>
+        // 注册 Service Worker 实现 PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').then(registration => {
+                    console.log('SW registered: ', registration);
+                }).catch(registrationError => {
+                    console.log('SW registration failed: ', registrationError);
+                });
+            });
+        }
+    </script>
 </body>
 </html>

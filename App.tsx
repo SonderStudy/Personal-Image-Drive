@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 
 interface ImageData {
@@ -13,6 +14,10 @@ interface SelectedFile {
 }
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authKey, setAuthKey] = useState<string>('');
+  const [loginError, setLoginError] = useState<string>('');
+
   const [allFiles, setAllFiles] = useState<ImageData[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -24,37 +29,82 @@ export default function App() {
   const [expandedFolder, setExpandedFolder] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const cleanSlug = (name: string) => {
-    const baseName = name.split('.')[0];
-    return baseName
-      .replace(/[^a-z0-9]/gi, '-')
-      .toLowerCase()
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .substring(0, 50);
-  };
+  // 初始化检查本地存储的密钥
+  useEffect(() => {
+    const savedKey = localStorage.getItem('wildsalt_vault_key');
+    if (savedKey) {
+      setAuthKey(savedKey);
+      verifyKey(savedKey);
+    } else {
+      setLoading(false);
+    }
+  }, []);
 
-  const fetchFiles = async () => {
+  const verifyKey = async (key: string) => {
     try {
-      const res = await fetch('/api/files');
-      if (!res.ok) throw new Error('Fetch failed');
-      const data = await res.json();
-      if (data.success) setAllFiles(data.files || []);
+      setLoading(true);
+      const res = await fetch('/api/files', {
+        headers: { 'x-auth-key': key }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAllFiles(data.files || []);
+        setIsAuthenticated(true);
+        localStorage.setItem('wildsalt_vault_key', key);
+      } else {
+        setLoginError('密钥验证失败，请重新输入');
+        localStorage.removeItem('wildsalt_vault_key');
+      }
     } catch (err) {
-      console.error('Fetch error:', err);
+      setLoginError('网络连接异常');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!authKey) return;
+    verifyKey(authKey);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('wildsalt_vault_key');
+    setIsAuthenticated(false);
+    setAuthKey('');
+    setAllFiles([]);
+  };
+
+  const fetchFiles = async () => {
+    try {
+      const res = await fetch('/api/files', {
+        headers: { 'x-auth-key': authKey }
+      });
+      if (!res.ok) {
+        if (res.status === 401) handleLogout();
+        throw new Error('Fetch failed');
+      }
+      const data = await res.json();
+      if (data.success) setAllFiles(data.files || []);
+    } catch (err) {
+      console.error('Fetch error:', err);
+    }
+  };
+
+  const cleanSlug = (name: string) => {
+    const baseName = name.split('.')[0];
+    return baseName.replace(/[^a-z0-9]/gi, '-').toLowerCase().replace(/-+/g, '-').replace(/^-|-$/g, '').substring(0, 50);
+  };
+
   useEffect(() => {
-    fetchFiles();
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setExpandedFolder(null);
-    };
-    window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, []);
+    if (isAuthenticated) {
+      const handleEsc = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') setExpandedFolder(null);
+      };
+      window.addEventListener('keydown', handleEsc);
+      return () => window.removeEventListener('keydown', handleEsc);
+    }
+  }, [isAuthenticated]);
 
   const groupedFiles = useMemo(() => {
     const groups: Record<string, ImageData[]> = {};
@@ -69,8 +119,9 @@ export default function App() {
 
   const recentFiles = useMemo(() => allFiles.slice(0, 12), [allFiles]);
 
+  // FIX: Cast the Array.from result to File[] to resolve 'unknown' type issues with URL.createObjectURL and property access
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
+    const files = Array.from(e.target.files || []) as File[];
     if (files.length === 0) return;
     selectedFiles.forEach(sf => URL.revokeObjectURL(sf.preview));
     const newSelected = files.map(file => ({ file, preview: URL.createObjectURL(file) }));
@@ -86,17 +137,26 @@ export default function App() {
     const formData = new FormData();
     formData.append('pathPrefix', prefix);
     try {
+      const headers = { 'x-auth-key': authKey };
       if (selectedFiles.length === 1) {
         formData.append('file', selectedFiles[0].file);
         formData.append('slug', slug);
         setUploadProgress('PROCESING...');
-        const response = await fetch('/api/upload', { method: 'POST', body: formData });
+        const response = await fetch('/api/upload', { 
+          method: 'POST', 
+          body: formData,
+          headers: headers
+        });
         const result = await response.json();
         if (!result.success) throw new Error(result.error);
       } else {
         selectedFiles.forEach(sf => formData.append('files', sf.file));
         setUploadProgress(`SYNCING ${selectedFiles.length}...`);
-        const response = await fetch('/api/upload-bulk', { method: 'POST', body: formData });
+        const response = await fetch('/api/upload-bulk', { 
+          method: 'POST', 
+          body: formData,
+          headers: headers
+        });
         const result = await response.json();
         if (!result.success) throw new Error(result.error);
       }
@@ -127,9 +187,52 @@ export default function App() {
     }
   };
 
+  // --- 鉴权界面 ---
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-6">
+        <div className="glass-panel w-full max-w-md rounded-[2.5rem] p-10 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-600 to-purple-600"></div>
+          <div className="flex flex-col items-center text-center">
+            <div className="w-20 h-20 bg-blue-600/10 rounded-3xl flex items-center justify-center mb-8 border border-blue-500/20 shadow-inner">
+               <svg className="w-10 h-10 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+               </svg>
+            </div>
+            <h1 className="text-3xl font-[900] tracking-tight gradient-text mb-2">Vault Locked</h1>
+            <p className="text-slate-500 text-sm mono uppercase tracking-widest mb-10">Access Key Required</p>
+            
+            <form onSubmit={handleLogin} className="w-full space-y-6">
+              <div className="relative">
+                <input 
+                  type="password" 
+                  value={authKey}
+                  onChange={(e) => { setAuthKey(e.target.value); setLoginError(''); }}
+                  placeholder="Enter Access Key"
+                  className="w-full bg-white/[0.03] border border-white/10 rounded-2xl px-6 py-5 text-center text-lg mono tracking-[0.3em] focus:border-blue-500/50 outline-none transition-all placeholder:tracking-normal placeholder:text-slate-600"
+                  autoFocus
+                />
+                {loginError && <p className="absolute -bottom-6 left-0 w-full text-[10px] font-bold text-red-500 mono uppercase tracking-wider">{loginError}</p>}
+              </div>
+              
+              <button 
+                type="submit"
+                disabled={loading}
+                className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white font-black rounded-2xl transition-all active:scale-[0.98] shadow-[0_10px_30px_rgba(37,99,235,0.3)] flex items-center justify-center gap-3"
+              >
+                {loading ? <span className="animate-pulse">VERIFYING...</span> : 'UNLOCK STORAGE'}
+                {!loading && <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7l5 5m0 0l-5 5m5-5H6" strokeWidth="2.5" strokeLinecap="round"/></svg>}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- 主界面 ---
   return (
     <div className="min-h-screen px-6 py-8 md:px-12 md:py-12 max-w-[1500px] mx-auto flex flex-col gap-12 relative">
-      {/* 顶部导航 */}
       <nav className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="relative group">
           <div className="absolute -inset-2 bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg blur opacity-20 group-hover:opacity-40 transition duration-1000"></div>
@@ -137,24 +240,25 @@ export default function App() {
             <h1 className="text-4xl font-[900] tracking-tight gradient-text">WildSaltDrive</h1>
             <div className="flex items-center gap-2 mt-1.5 mono text-[10px] text-slate-500 uppercase tracking-[0.2em]">
               <span className="w-1.5 h-1.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.8)]"></span>
-              Secure Image Engine // V4.0.0
+              Secure Image Engine // V4.1.0
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-4 bg-white/[0.03] border border-white/10 rounded-2xl px-5 py-3 backdrop-blur-md">
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] mono text-slate-500 uppercase tracking-widest">Total Assets</span>
-            <span className="text-xl font-bold mono text-white">{loading ? '...' : allFiles.length}</span>
-          </div>
-          <div className="w-[1px] h-8 bg-white/10 mx-1"></div>
-          <div className="w-10 h-10 bg-blue-600/10 rounded-full flex items-center justify-center text-blue-400">
-             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" strokeWidth="2"/></svg>
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 bg-white/[0.03] border border-white/10 rounded-2xl px-5 py-3 backdrop-blur-md">
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] mono text-slate-500 uppercase tracking-widest">Total Assets</span>
+              <span className="text-xl font-bold mono text-white">{allFiles.length}</span>
+            </div>
+            <div className="w-[1px] h-8 bg-white/10 mx-1"></div>
+            <button onClick={handleLogout} className="w-10 h-10 bg-red-600/10 hover:bg-red-600/20 rounded-full flex items-center justify-center text-red-400 transition-colors" title="Logout">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
           </div>
         </div>
       </nav>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
-        {/* 左侧：精雕细琢的上传区 */}
         <section className="xl:col-span-4 lg:sticky lg:top-12 h-fit">
           <div className="glass-panel rounded-[2rem] p-8 relative overflow-hidden">
             <div className="flex justify-between items-center mb-8">
@@ -178,10 +282,7 @@ export default function App() {
                 <p className="text-[10px] text-slate-600 mt-2 mono">MAX 50MB / IMAGE</p>
               </div>
               <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} accept="image/*" multiple />
-              
-              {selectedFiles.length > 0 && (
-                <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"></div>
-              )}
+              {selectedFiles.length > 0 && <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"></div>}
             </div>
 
             {selectedFiles.length > 0 && (
@@ -218,18 +319,14 @@ export default function App() {
           </div>
         </section>
 
-        {/* 右侧：管理卷与最近活动 */}
         <section className="xl:col-span-8 flex flex-col gap-12">
-          {/* 存储卷 */}
           <div className="space-y-6">
             <h2 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-3">
               <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
               Storage Volumes
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {loading ? (
-                [1,2,3,4].map(i => <div key={i} className="aspect-[4/5] rounded-[2rem] bg-white/[0.02] animate-pulse border border-white/5" />)
-              ) : Object.entries(groupedFiles).map(([folder, files]) => (
+              {Object.entries(groupedFiles).map(([folder, files]) => (
                 <div key={folder} onClick={() => setExpandedFolder(folder)} className="folder-card group cursor-pointer flex flex-col gap-4">
                   <div className="aspect-[4/5] rounded-[2rem] bg-slate-900/40 border border-white/5 p-4 shadow-xl relative overflow-hidden">
                     <div className="grid grid-cols-2 grid-rows-2 gap-2 h-full">
@@ -249,7 +346,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* 最近活动 - Quick Workflow */}
           <div className="space-y-6 pt-10 border-t border-white/5">
             <h2 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] flex items-center gap-3">
               <span className="w-1.5 h-1.5 bg-purple-500 rounded-full"></span>
@@ -264,18 +360,8 @@ export default function App() {
                   <div className="flex-1 min-w-0 flex flex-col justify-between">
                     <p className="text-[13px] font-bold text-slate-200 truncate leading-none group-hover:text-blue-300 transition-colors">{file.name}</p>
                     <div className="flex gap-2.5 mt-3">
-                      <button 
-                        onClick={(e) => copyToClipboard(e, file.url)} 
-                        className="quick-copy-btn flex-1 py-2 bg-blue-500/10 hover:bg-blue-600 border border-blue-500/20 hover:border-blue-400 rounded-xl text-[11px] font-black text-blue-400 hover:text-white mono tracking-widest"
-                      >
-                        LINK
-                      </button>
-                      <button 
-                        onClick={(e) => copyToClipboard(e, `![${file.name}](${window.location.origin}${file.url})`)} 
-                        className="quick-copy-btn flex-1 py-2 bg-purple-500/10 hover:bg-purple-600 border border-purple-500/20 hover:border-purple-400 rounded-xl text-[11px] font-black text-purple-400 hover:text-white mono tracking-widest"
-                      >
-                        MD
-                      </button>
+                      <button onClick={(e) => copyToClipboard(e, file.url)} className="quick-copy-btn flex-1 py-2 bg-blue-500/10 hover:bg-blue-600 border border-blue-500/20 hover:border-blue-400 rounded-xl text-[11px] font-black text-blue-400 hover:text-white mono tracking-widest">LINK</button>
+                      <button onClick={(e) => copyToClipboard(e, `![${file.name}](${window.location.origin}${file.url})`)} className="quick-copy-btn flex-1 py-2 bg-purple-500/10 hover:bg-purple-600 border border-purple-500/20 hover:border-purple-400 rounded-xl text-[11px] font-black text-purple-400 hover:text-white mono tracking-widest">MD</button>
                     </div>
                   </div>
                 </div>
@@ -285,7 +371,6 @@ export default function App() {
         </section>
       </div>
 
-      {/* 全屏详情沉浸页 */}
       {expandedFolder && (
         <div className="fixed inset-0 z-[100] bg-slate-950/98 backdrop-blur-3xl flex flex-col animate-in fade-in duration-500">
           <div className="max-w-[1400px] mx-auto w-full flex flex-col h-full p-8 md:p-16">
@@ -299,14 +384,14 @@ export default function App() {
                   <h3 className="text-5xl font-black tracking-tighter">
                     <span className="text-blue-600">/</span> {expandedFolder}
                   </h3>
-                  <span className="text-slate-500 mono text-sm uppercase tracking-widest">{groupedFiles[expandedFolder]?.length} ASSETS</span>
+                  {/* FIX: Use type assertion for expandedFolder index to ensure groupedFiles access is typed correctly and resolve 'unknown' property error */}
+                  <span className="text-slate-500 mono text-sm uppercase tracking-widest">{(groupedFiles[expandedFolder as string] || []).length} ASSETS</span>
                 </div>
               </div>
             </header>
-
             <div className="flex-1 overflow-y-auto custom-scrollbar pr-4 pb-20">
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-8">
-                {groupedFiles[expandedFolder]?.map((file, idx) => (
+                {groupedFiles[expandedFolder as string]?.map((file, idx) => (
                   <div key={idx} className="group flex flex-col gap-4">
                     <div className="aspect-square rounded-3xl overflow-hidden bg-slate-900 border border-white/5 relative group shadow-2xl">
                       <img src={file.url} className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110 group-hover:rotate-2" loading="lazy" />
