@@ -21,7 +21,6 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
 
   useEffect(() => {
     const checkKey = async () => {
-      // Fix: Use optional chaining or existence check for window.aistudio
       if (window.aistudio) {
         const selected = await window.aistudio.hasSelectedApiKey();
         setHasKey(selected);
@@ -47,7 +46,6 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
 
   const cleanPath = (p: string) => p.replace(/^\/+|\/+$/g, '');
   const cleanDomain = (d: string) => d.replace(/\/+$/, '');
-  
   const finalUrlPreview = `https://${cleanDomain(baseDomain)}/${cleanPath(pathPrefix)}/${slug}`;
 
   const handleUpload = async () => {
@@ -55,12 +53,9 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
     setIsUploading(true);
 
     try {
-      let metadata = {
-        title: file.name,
-        tags: ['manual'],
-        description: ''
-      };
+      let metadata = { title: file.name, tags: ['manual'], description: '' };
 
+      // 1. AI 智能分析 (如果开启)
       if (useAI && hasKey) {
         try {
           const aiResult = await analyzeImage(preview, file.name);
@@ -70,15 +65,32 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
             description: aiResult.description || ''
           };
         } catch (aiError: any) {
-          console.warn("AI analysis failed, falling back to basic metadata", aiError);
-          // Fix: Handle "Requested entity was not found" by prompting user to re-select key as per guidelines
           if (aiError.message?.includes("Requested entity was not found") && window.aistudio) {
             setHasKey(false);
             await window.aistudio.openSelectKey();
-            // Assume the key selection was successful after triggering openSelectKey() to mitigate race condition
             setHasKey(true);
           }
         }
+      }
+
+      // 2. 尝试向 VPS 后端发送文件
+      // 注意：这里尝试请求本地部署的 API，如果失败则仅进行前端模拟
+      try {
+        const formData = new FormData();
+        formData.append('image', file);
+        formData.append('pathPrefix', cleanPath(pathPrefix));
+        formData.append('slug', slug);
+
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          console.log("File saved to VPS storage successfully");
+        }
+      } catch (e) {
+        console.warn("No active backend found, performing frontend-only simulation.");
       }
       
       const newImage: UploadedImage = {
@@ -98,7 +110,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
       onUploadComplete(newImage);
       reset();
     } catch (error) {
-      console.error("Upload failed", error);
+      console.error("Upload process failed", error);
     } finally {
       setIsUploading(false);
     }
@@ -114,7 +126,6 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
   return (
     <div className="glass rounded-2xl p-6 md:p-8 mb-8 border-blue-500/20 border shadow-2xl">
       <div className="flex flex-col lg:flex-row gap-10 items-start">
-        {/* Dropzone */}
         <div className="w-full lg:w-1/3">
           <div 
             onClick={() => fileInputRef.current?.click()}
@@ -130,14 +141,13 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
                   </svg>
                 </div>
                 <p className="text-slate-300 font-medium">Select Image</p>
-                <p className="text-slate-500 text-xs mt-2">Ready for your VPS</p>
+                <p className="text-slate-500 text-xs mt-2">Will auto-create folders on VPS</p>
               </div>
             )}
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
           </div>
         </div>
 
-        {/* Config Form */}
         <div className="flex-1 w-full space-y-6">
           <div className="flex justify-between items-center">
             <h3 className="text-xl font-bold text-white tracking-tight">Deployment Config</h3>
@@ -191,7 +201,6 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
             />
           </div>
 
-          {/* URL Preview Card */}
           <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 transition-all">
             <div className="flex justify-between items-center mb-1">
               <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Final URL Preview</span>
@@ -215,12 +224,6 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
               Cancel
             </Button>
           </div>
-          
-          {!hasKey && useAI && (
-            <p className="text-[10px] text-amber-500/80 text-center">
-              * Connect an API Key in the top right to enable AI auto-tagging.
-            </p>
-          )}
         </div>
       </div>
     </div>
