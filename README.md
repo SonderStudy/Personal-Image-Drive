@@ -7,7 +7,8 @@
 
 #### 第一步：清理进程
 ```bash
-sudo fuser -k 3001/tcp
+# 修改为 3003
+sudo fuser -k 3003/tcp
 pm2 delete lumina-drive || true
 ```
 
@@ -25,15 +26,15 @@ pm2 start server.js --name lumina-drive
 pm2 logs lumina-drive
 ```
 
-### 🌍 Nginx 推荐配置
-请确保 `/etc/nginx/sites-enabled/pic.wildsalt.me` 中的 `root` 指向正确：
+### 🌍 Nginx 推荐配置 (重要：需同步修改)
+请确保 `/etc/nginx/sites-enabled/pic.wildsalt.me` 中的 `proxy_pass` 指向 **3003**：
 
 ```nginx
 location / {
-    proxy_pass http://127.0.0.1:3001;
+    proxy_pass http://127.0.0.1:3003; # 这里改为 3003
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
-    client_max_body_size 50M; # 必须增加上传大小限制
+    client_max_body_size 50M; 
 }
 
 location /img/ {

@@ -98,7 +98,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
           return;
         }
       } catch (e) {
-        alert("❌ 无法连接到后端。请确保 Node.js 服务已启动并运行在 3001 端口。");
+        alert("❌ 无法连接到后端。请确保 Node.js 服务已启动并运行在 3003 端口。");
         setIsUploading(false);
         return;
       }

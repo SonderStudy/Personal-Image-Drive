@@ -6,7 +6,8 @@ const fs = require('fs');
 const cors = require('cors');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+// 修改默认端口为 3003
+const PORT = process.env.PORT || 3003;
 const STORAGE_ROOT = path.join(__dirname, 'storage');
 
 // 1. 自动创建基础存储目录
