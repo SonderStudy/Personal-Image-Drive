@@ -1,64 +1,25 @@
-# LuminaDrive 部署手册 (V3 生产修复版)
+# LuminaDrive 部署手册 (V3.1 稳定版)
 
-### 📦 第一步：环境准备
-确保您的 VPS 已安装 Node.js (v16+) 和 PM2。
+### 📦 快速部署
+1. **安装环境**：`npm install`
+2. **运行服务**：`pm2 start server.js --name lumina`
 
-1. **上传代码**到 VPS 目录（例如 `/var/www/lumina`）。
-2. **安装依赖** (这步最重要)：
-   ```bash
-   npm install
-   ```
+### 🛠 常见问题排查
 
-### 🚀 第二步：启动应用
-使用 PM2 管理进程，确保崩溃自动重启：
+#### 1. 点击复制按钮“跳转”或显示一堆文字
+*   **原因**：这通常是因为浏览器禁用了 `navigator.clipboard`（通常发生在非 HTTPS 环境下），或者旧代码中的全局事件冲突。
+*   **修复**：当前 V3.1 版本已增加显式事件传递和 `document.execCommand` 兼容性方案，请确保覆盖所有文件。
+
+#### 2. Nginx 502 错误
+*   执行 `pm2 logs lumina`。
+*   如果提示 `EADDRINUSE`，说明 3003 端口被占用，请先 `fuser -k 3003/tcp`。
+*   确保 Nginx `proxy_pass` 指向 `http://127.0.0.1:3003`。
+
+#### 3. HTTPS 建议
+*   剪贴板 API 在 HTTPS 下体验最佳。建议使用 `acme.sh` 或 `Certbot` 为域名申请证书。
+
+### 📁 文件权限
 ```bash
-pm2 start server.js --name lumina
-pm2 save
-```
-
-### 🛠 第三步：排查 502 错误
-如果您看到 502，请按顺序执行：
-
-1. **检查应用状态**：
-   ```bash
-   pm2 status
-   ```
-   如果状态不是 `online`，查看日志：`pm2 logs lumina`。
-
-2. **本地连通性测试**：
-   在 VPS 终端执行：
-   ```bash
-   curl http://127.0.0.1:3003/api/health
-   ```
-   如果返回 `{"status":"ok"}`，说明 Node 应用正常，问题在 Nginx。
-
-3. **Nginx 配置修复**：
-   请确保 `proxy_pass` 指向的端口与 `server.js` 一致（默认 3003）。
-   ```nginx
-   server {
-       listen 80;
-       server_name 您的域名;
-
-       location / {
-           proxy_pass http://127.0.0.1:3003;
-           proxy_http_version 1.1;
-           proxy_set_header Upgrade $http_upgrade;
-           proxy_set_header Connection 'upgrade';
-           proxy_set_header Host $host;
-           proxy_cache_bypass $http_upgrade;
-       }
-
-       # 建议 Nginx 直接处理静态文件
-       location /storage/ {
-           alias /var/www/lumina/storage/; # 改为您代码的实际绝对路径
-           expires 30d;
-       }
-   }
-   ```
-
-### 📁 权限说明
-如果上传失败，请执行：
-```bash
-sudo chown -R www-data:www-data /var/www/lumina/storage
-chmod -R 755 /var/www/lumina/storage
+# 确保 storage 目录可写
+chmod -R 755 storage
 ```
