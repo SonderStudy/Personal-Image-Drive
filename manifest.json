@@ -8,13 +8,13 @@
   "theme_color": "#020617",
   "icons": [
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/10664/10664448.png",
+      "src": "https://pic.wildsalt.me/storage/img/logo/engine.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "https://cdn-icons-png.flaticon.com/512/10664/10664448.png",
+      "src": "https://pic.wildsalt.me/storage/img/logo/engine.png",
       "sizes": "512x512",
       "type": "image/png"
     }
