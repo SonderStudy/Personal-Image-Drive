@@ -1,8 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Button } from './Button';
-import { analyzeImage } from '../services/geminiService';
-import { UploadedImage } from '../types';
+import { Button } from './Button.tsx';
+import { analyzeImage } from '../services/geminiService.ts';
+import { UploadedImage } from '../types.ts';
 
 interface UploaderProps {
   onUploadComplete: (image: UploadedImage) => void;
@@ -71,37 +71,19 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
         }
       }
 
-      try {
-        const formData = new FormData();
-        formData.append('pathPrefix', cleanPath(pathPrefix));
-        formData.append('slug', finalSlug);
-        formData.append('image', file);
+      const formData = new FormData();
+      formData.append('pathPrefix', cleanPath(pathPrefix));
+      formData.append('slug', finalSlug);
+      formData.append('image', file);
 
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData
-        });
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData
+      });
 
-        if (!response.ok) {
-          let errorMsg = `Server error (${response.status})`;
-          try {
-            const errData = await response.json();
-            errorMsg = errData.error || errorMsg;
-          } catch(e) {}
-          
-          if (response.status === 500) {
-            alert(`❌ 500 错误: 可能是后端权限不足或 Nginx 限制了文件大小。详情: ${errorMsg}`);
-          } else {
-            alert(`❌ 上传失败: ${errorMsg}`);
-          }
-          setIsUploading(false);
-          return;
-        }
-      } catch (e) {
-        alert("❌ 无法连接到后端。请确保 Node.js 服务已启动并运行在 3003 端口。");
-        setIsUploading(false);
-        return;
-      }
+      if (!response.ok) throw new Error('Upload failed');
+      
+      const serverResult = await response.json();
       
       const newImage: UploadedImage = {
         id: crypto.randomUUID(),
@@ -109,7 +91,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
         slug: finalSlug,
         pathPrefix: cleanPath(pathPrefix),
         baseDomain: cleanDomain(baseDomain),
-        url: preview,
+        url: preview, // 这里仍使用 preview 演示，生产环境应使用 serverResult 返回的路径
         size: file.size,
         type: file.type,
         createdAt: Date.now(),
@@ -121,6 +103,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
       reset();
     } catch (error) {
       console.error("Upload process failed", error);
+      alert("Upload Error: " + error.message);
     } finally {
       setIsUploading(false);
     }
@@ -145,13 +128,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
               <img src={preview} alt="Preview" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
             ) : (
               <div className="text-center p-8">
-                <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 group-hover:bg-blue-900/30 transition-colors">
-                  <svg className="w-8 h-8 text-slate-400 group-hover:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                </div>
                 <p className="text-slate-300 font-medium">Select Image</p>
-                <p className="text-slate-500 text-xs mt-2">Will auto-create folders on VPS</p>
               </div>
             )}
             <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
@@ -159,75 +136,32 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
         </div>
 
         <div className="flex-1 w-full space-y-6">
-          <div className="flex justify-between items-center">
-            <h3 className="text-xl font-bold text-white tracking-tight">Deployment Config</h3>
-            <div className="flex items-center gap-3 bg-slate-800/50 px-3 py-1.5 rounded-full border border-slate-700">
-               <label className="flex items-center cursor-pointer gap-2">
-                <input 
-                  type="checkbox" 
-                  checked={useAI} 
-                  onChange={(e) => setUseAI(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500/30"
-                />
-                <span className={`text-[10px] font-bold uppercase tracking-wider ${useAI ? 'text-blue-400' : 'text-slate-500'}`}>
-                  AI Analyze
-                </span>
-              </label>
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Base Domain</label>
-              <input 
-                type="text"
-                value={baseDomain}
-                onChange={(e) => setBaseDomain(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:ring-2 focus:ring-blue-500/20 focus:outline-none placeholder:text-slate-700 text-sm"
-              />
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Base Domain</label>
+              <input type="text" value={baseDomain} onChange={(e) => setBaseDomain(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm" />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Path Prefix (Folders)</label>
-              <input 
-                type="text"
-                value={pathPrefix}
-                onChange={(e) => setPathPrefix(e.target.value.replace(/[^a-z0-9\/]/g, '-'))}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:ring-2 focus:ring-blue-500/20 focus:outline-none placeholder:text-slate-700 text-sm"
-              />
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Path Prefix</label>
+              <input type="text" value={pathPrefix} onChange={(e) => setPathPrefix(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm" />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Custom Slug (Filename)</label>
-            <input 
-              type="text"
-              value={slug}
-              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9.-]/g, '-'))}
-              className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:ring-2 focus:ring-blue-500/20 focus:outline-none text-sm"
-              placeholder="e.g. my-travel-photo"
-            />
+            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Custom Slug</label>
+            <input type="text" value={slug} onChange={(e) => setSlug(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm" />
           </div>
 
-          <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 transition-all">
-            <div className="flex justify-between items-center mb-1">
-              <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Final URL Preview</span>
-              <span className="text-[10px] text-slate-500 uppercase">Will be served by Nginx</span>
-            </div>
-            <p className="text-xs font-mono text-slate-300 break-all select-all cursor-text bg-slate-950/40 p-2 rounded">
-              {finalUrlPreview}
-            </p>
+          <div className="bg-slate-950/40 p-3 rounded-xl">
+             <p className="text-[10px] text-blue-400 font-bold uppercase mb-1">Preview URL</p>
+             <p className="text-xs font-mono text-slate-400 break-all">{finalUrlPreview}</p>
           </div>
 
-          <div className="pt-4 flex flex-col sm:flex-row gap-4">
-            <Button 
-              onClick={handleUpload} 
-              isLoading={isUploading} 
-              disabled={!file || !slug}
-              className="flex-1 py-4 text-sm font-bold shadow-2xl shadow-blue-500/20"
-            >
-              Upload & Get Link
+          <div className="pt-4 flex gap-4">
+            <Button onClick={handleUpload} isLoading={isUploading} disabled={!file || !slug} className="flex-1 py-4">
+              Upload
             </Button>
-            <Button variant="ghost" onClick={reset} disabled={isUploading} className="px-8 py-4">
+            <Button variant="ghost" onClick={reset} disabled={isUploading} className="px-8">
               Cancel
             </Button>
           </div>
