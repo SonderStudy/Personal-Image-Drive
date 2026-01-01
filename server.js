@@ -9,7 +9,6 @@ const app = express();
 const PORT = 3003;
 const STORAGE_ROOT = path.join(__dirname, 'storage');
 
-// 确保存储根目录存在
 if (!fs.existsSync(STORAGE_ROOT)) {
   fs.mkdirSync(STORAGE_ROOT, { recursive: true });
 }
@@ -17,11 +16,7 @@ if (!fs.existsSync(STORAGE_ROOT)) {
 app.use(cors());
 app.use(express.json());
 
-// --- 1. 核心 API 路由 ---
-
 const sanitizePath = (p) => p.replace(/\.\./g, '').replace(/[\\:]/g, '/').replace(/\/+/g, '/').replace(/^\//, '');
-
-// 安全策略：允许的图片格式白名单
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
 
@@ -55,7 +50,6 @@ app.get('/api/files', (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     return res.json({ success: true, files });
   } catch (err) {
-    console.error('API Error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -69,61 +63,72 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    const finalName = req.body.slug 
-      ? (req.body.slug.endsWith(ext) ? sanitizePath(req.body.slug) : sanitizePath(req.body.slug) + ext)
-      : (Date.now() + ext);
-    cb(null, finalName);
+    // 批量上传时不使用单一 slug，使用原名基础上的时间戳化
+    const baseName = path.basename(file.originalname, ext).replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    cb(null, `${baseName}-${Date.now()}${ext}`);
   }
 });
 
-// Multer 文件过滤器：严格控制上传类型
 const fileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
   const isAllowedMime = ALLOWED_MIME_TYPES.includes(file.mimetype);
   const isAllowedExt = ALLOWED_EXTENSIONS.includes(ext);
-
   if (isAllowedMime && isAllowedExt) {
     cb(null, true);
   } else {
-    cb(new Error(`非法文件类型。仅支持: ${ALLOWED_EXTENSIONS.join(', ')}`), false);
+    cb(new Error(`不支持文件类型: ${ext}`), false);
   }
 };
 
 const upload = multer({ 
   storage, 
   fileFilter,
-  limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+  limits: { fileSize: 50 * 1024 * 1024 } 
 });
 
-// 上传路由增加错误捕获中间件
+// 单文件上传路由 (保留用于单选及 Slug 情况)
 app.post('/api/upload', (req, res) => {
+  // 单个文件可能需要 slug，这里特殊处理一下 storage 的 filename 是比较麻烦的，
+  // 为了简单起见，我们直接复用 upload 逻辑，如果 body 带有 slug，就在这里重命名
   upload.single('file')(req, res, (err) => {
-    if (err instanceof multer.MulterError) {
-      // Multer 内部错误（如文件过大）
-      return res.status(400).json({ success: false, error: `上传限制: ${err.message}` });
-    } else if (err) {
-      // 自定义错误（如文件类型不符）
-      return res.status(400).json({ success: false, error: err.message });
-    }
+    if (err) return res.status(400).json({ success: false, error: err.message });
+    if (!req.file) return res.status(400).json({ success: false, error: '未接收到文件' });
 
-    if (!req.file) {
-      return res.status(400).json({ success: false, error: '未接收到有效文件' });
+    // 如果用户提供了 slug，我们在存储后重命名它（单文件专用）
+    if (req.body.slug) {
+      const ext = path.extname(req.file.path);
+      const newName = req.body.slug.endsWith(ext) ? sanitizePath(req.body.slug) : sanitizePath(req.body.slug) + ext;
+      const newPath = path.join(path.dirname(req.file.path), newName);
+      try {
+        fs.renameSync(req.file.path, newPath);
+        req.file.path = newPath;
+        req.file.filename = newName;
+      } catch (e) {
+        console.error("Rename error", e);
+      }
     }
 
     const relativePath = req.file.path.replace(STORAGE_ROOT, '').replace(/\\/g, '/');
-    return res.json({
-      success: true,
-      url: `/storage${relativePath}`,
-      path: relativePath,
-      filename: req.file.filename
-    });
+    return res.json({ success: true, url: `/storage${relativePath}` });
   });
 });
 
-app.get('/api/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+// 批量上传路由
+app.post('/api/upload-bulk', (req, res) => {
+  upload.array('files', 20)(req, res, (err) => {
+    if (err) return res.status(400).json({ success: false, error: err.message });
+    if (!req.files || req.files.length === 0) return res.status(400).json({ success: false, error: '未接收到文件' });
 
-// --- 2. 静态资源与转换中间件 ---
+    const results = req.files.map(file => {
+      const relativePath = file.path.replace(STORAGE_ROOT, '').replace(/\\/g, '/');
+      return { url: `/storage${relativePath}`, name: file.originalname };
+    });
 
+    return res.json({ success: true, files: results });
+  });
+});
+
+app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 app.use('/storage', express.static(STORAGE_ROOT));
 
 app.use((req, res, next) => {
@@ -141,8 +146,7 @@ app.use((req, res, next) => {
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
         return res.send(result.code);
       } catch (e) {
-        console.error('Transpilation Error:', e);
-        return res.status(500).send(`Transpilation Error: ${e.message}`);
+        return res.status(500).send(e.message);
       }
     }
   }
@@ -151,16 +155,9 @@ app.use((req, res, next) => {
 
 app.use(express.static(__dirname));
 
-// --- 3. SPA 路由兜底 ---
-
 app.get('*', (req, res) => {
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ success: false, error: 'API endpoint not found' });
-  }
-  if (req.path.includes('.')) return res.status(404).end();
+  if (req.path.startsWith('/api/')) return res.status(404).json({ success: false });
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 LuminaDrive v3.5.2 [Secure] is running at http://0.0.0.0:${PORT}`);
-});
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 LuminaDrive v3.6.0 [Bulk Support] on ${PORT}`));
