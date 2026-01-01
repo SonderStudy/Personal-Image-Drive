@@ -25,48 +25,43 @@ ensureDir(STORAGE_ROOT);
 app.use(cors());
 app.use(express.json());
 
-// 确定源码根目录（即当前 server.js 所在目录）
+// 确定源码根目录
 const publicPath = __dirname;
 
-// 2. [核心修复] 高可靠即时转译中间件
-// 该中间件必须在 express.static 之前运行
+// 2. 高可靠即时转译中间件
 app.use((req, res, next) => {
   const urlPath = req.path;
   const ext = path.extname(urlPath);
 
-  // 拦截所有 .tsx 和 .ts 请求
   if (ext === '.tsx' || ext === '.ts') {
     const filePath = path.join(publicPath, urlPath);
     
-    // 打印调试日志，你可以通过 pm2 logs 查看是否命中
-    console.log(`[Transpiler] 🔍 处理请求: ${urlPath} -> 物理路径: ${filePath}`);
+    console.log(`[Transpiler] 🔍 处理请求: ${urlPath}`);
 
     if (fs.existsSync(filePath)) {
       try {
         const content = fs.readFileSync(filePath, 'utf8');
         
-        // 使用 esbuild 进行毫秒级转译
+        // 【核心修复】jsx 选项改为 'transform'
         const result = esbuild.transformSync(content, {
           loader: ext === '.ts' ? 'ts' : 'tsx',
           format: 'esm',
           target: 'es2020',
-          jsx: 'react', // 使用 React.createElement 模式
+          jsx: 'transform', 
           define: {
             'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
           }
         });
 
-        // 关键：强制设置正确的 MIME 类型
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
         console.log(`[Transpiler] ✅ 编译成功: ${urlPath}`);
         return res.send(result.code);
       } catch (err) {
         console.error(`[Transpiler] ❌ 编译失败 ${urlPath}:`, err.message);
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        // 将错误输出到浏览器控制台，方便调试
         return res.status(500).send(`console.error("LuminaDrive Transpile Error: ${err.message.replace(/"/g, '\\"')}");`);
       }
-    } else {
-      console.warn(`[Transpiler] ⚠️ 文件不存在: ${filePath}`);
     }
   }
   next();
@@ -97,11 +92,9 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
   });
 });
 
-// 4. 静态资源与 SPA 路由
 app.use('/storage', express.static(STORAGE_ROOT));
 app.use(express.static(publicPath));
 
-// 兜底返回 index.html (支持 SPA 刷新)
 app.get('*', (req, res) => {
   const indexPath = path.join(publicPath, 'index.html');
   if (fs.existsSync(indexPath)) {
@@ -114,10 +107,8 @@ app.get('*', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`
   -------------------------------------------------------
-  🚀 LuminaDrive 后端已就绪 (v1.1)
-  📍 访问地址: http://0.0.0.0:${PORT}
-  🛠 实时转译模式: 已开启 (.tsx, .ts)
-  📂 存储根目录: ${STORAGE_ROOT}
+  🚀 LuminaDrive 后端已就绪 (v1.2)
+  🛠 模式: 修复了 esbuild 配置错误
   -------------------------------------------------------
   `);
 });
