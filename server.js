@@ -1,4 +1,3 @@
-
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
@@ -15,7 +14,7 @@ const ensureDir = (dirPath) => {
     try {
       fs.mkdirSync(dirPath, { recursive: true });
     } catch (err) {
-      console.error(`❌ Folder creation error:`, err);
+      console.error(`❌ Dir Error:`, err);
     }
   }
 };
@@ -26,20 +25,20 @@ app.use(express.json());
 
 const publicPath = path.resolve(__dirname);
 
-// 即时转译中间件 (V1.5 - 终极防御版)
+// V1.6 终极转译拦截器
 app.use((req, res, next) => {
-  const parsedPath = req.path;
-  const ext = path.extname(parsedPath);
+  // 获取不带查询参数的路径
+  const requestPath = req.path;
+  const ext = path.extname(requestPath);
 
   if (ext === '.tsx' || ext === '.ts') {
-    // 强制指定响应类型，防止任何情况下的 "text/html" 错误
+    // 立即锁定 MIME 类型，防止被后续任何逻辑覆盖
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
 
-    const relativePath = parsedPath.startsWith('/') ? parsedPath.slice(1) : parsedPath;
+    const relativePath = requestPath.startsWith('/') ? requestPath.slice(1) : requestPath;
     const filePath = path.join(publicPath, relativePath);
-    
-    console.log(`[Transpiler] 🔍 Request: ${parsedPath} -> Real: ${filePath}`);
 
     if (fs.existsSync(filePath)) {
       try {
@@ -49,22 +48,20 @@ app.use((req, res, next) => {
           format: 'esm',
           target: 'es2020',
           jsx: 'transform',
-          minify: false, // 调试阶段不压缩
+          minify: false,
           define: {
             'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
           }
         });
-
-        console.log(`[Transpiler] ✅ Compiled Successfully: ${parsedPath}`);
+        console.log(`[JS-TRANSPILE] ✅ ${requestPath}`);
         return res.send(result.code);
       } catch (err) {
-        console.error(`[Transpiler] ❌ Syntax Error in ${parsedPath}:`, err.message);
-        return res.status(500).send(`console.error("Transpile Error in ${parsedPath}: ${err.message.replace(/"/g, '\\"')}");`);
+        console.error(`[JS-TRANSPILE] ❌ Error in ${requestPath}:`, err.message);
+        return res.status(200).send(`console.error("Compile Error in ${requestPath}: ${err.message.replace(/"/g, "'")}");`);
       }
     } else {
-        console.error(`[Transpiler] ❌ File Not Found: ${filePath}`);
-        // 关键：如果文件不存在，返回一个 404 的 JS 片段，而不是让它进入 index.html 通配符
-        return res.status(404).send(`console.error("File not found: ${parsedPath}");`);
+      console.error(`[JS-TRANSPILE] ❌ Not Found: ${filePath}`);
+      return res.status(200).send(`console.error("File not found: ${requestPath}");`);
     }
   }
   next();
@@ -88,33 +85,26 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 app.post('/api/upload', upload.single('image'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  if (!req.file) return res.status(400).json({ error: 'No file' });
   const relativePath = req.file.path.replace(STORAGE_ROOT, '').replace(/\\/g, '/');
   res.json({
     message: 'Success',
-    file: { 
-      path: relativePath, 
-      filename: req.file.filename,
-      url: `/storage${relativePath}`
-    }
+    file: { path: relativePath, url: `/storage${relativePath}` }
   });
 });
 
 app.use('/storage', express.static(STORAGE_ROOT));
 app.use(express.static(publicPath));
 
-// 通配符路由仅服务于非静态资源的页面导航
+// 终极 HTML 回落逻辑
 app.get('*', (req, res) => {
-  // 如果请求是寻找 .js/.tsx 但走到了这里，说明前面的中间件漏掉了
-  if (req.path.includes('.')) {
+  // 如果请求的是静态资源后缀，绝不返回 HTML
+  if (req.path.includes('.') && !req.path.endsWith('.html')) {
     return res.status(404).send('Not Found');
   }
   res.sendFile(path.join(publicPath, 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🚀 LuminaDrive Backend v1.5`);
-  console.log(`📍 Port: ${PORT}`);
-  console.log(`📂 Root: ${publicPath}`);
-  console.log(`🖼 Storage: ${STORAGE_ROOT}\n`);
+  console.log(`\n🚀 LuminaDrive V1.6 | Port: ${PORT}`);
 });
