@@ -61,7 +61,6 @@ export default function App() {
     const groups: Record<string, ImageData[]> = {};
     allFiles.forEach(file => {
       const parts = file.path.split('/');
-      // 提取文件夹路径
       const folder = parts.length > 2 ? parts.slice(1, -1).join('/') : 'root';
       if (!groups[folder]) groups[folder] = [];
       groups[folder].push(file);
@@ -137,8 +136,8 @@ export default function App() {
 
     try {
       await navigator.clipboard.writeText(finalCopyText);
-      btn.innerText = '已复制!';
-      setTimeout(() => btn.innerHTML = originalContent, 1500);
+      btn.innerHTML = '<span class="text-green-400">COPIED!</span>';
+      setTimeout(() => btn.innerHTML = originalContent, 1200);
     } catch (err) {
       const textArea = document.createElement("textarea");
       textArea.value = finalCopyText;
@@ -146,8 +145,8 @@ export default function App() {
       textArea.select();
       document.execCommand('copy');
       document.body.removeChild(textArea);
-      btn.innerText = '已复制!';
-      setTimeout(() => btn.innerHTML = originalContent, 1500);
+      btn.innerHTML = '<span class="text-green-400">COPIED!</span>';
+      setTimeout(() => btn.innerHTML = originalContent, 1200);
     }
   };
 
@@ -166,7 +165,7 @@ export default function App() {
           <h1 className="text-3xl font-black tracking-tighter gradient-text">WildSaltDrive</h1>
           <div className="flex items-center gap-2 mt-1 font-mono text-[10px] text-slate-500 uppercase">
             <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-            File System Engine v3.8.0
+            File System Engine v3.8.5
           </div>
         </div>
         <div className="flex gap-4">
@@ -244,7 +243,7 @@ export default function App() {
           <div className="flex items-center justify-between">
              <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" strokeWidth="2"/></svg>
-              我的存储卷
+              存储卷预览
             </h2>
           </div>
           
@@ -255,7 +254,6 @@ export default function App() {
               <div className="col-span-full py-20 text-center border-2 border-dashed border-slate-800 rounded-3xl opacity-30 text-slate-500">暂无存储卷</div>
             ) : Object.entries(groupedFiles).map(([folder, files]) => (
               <div key={folder} onClick={() => setExpandedFolder(folder)} className="group cursor-pointer flex flex-col gap-3">
-                {/* 文件夹预览卡片 (2x2) */}
                 <div className="aspect-[4/5] rounded-3xl bg-slate-900/40 border border-white/5 p-3 group-hover:border-blue-500/40 group-hover:bg-slate-900/80 transition-all shadow-xl">
                   <div className="grid grid-cols-2 grid-rows-2 gap-2 h-full">
                     {[0, 1, 2, 3].map(i => (
@@ -271,7 +269,6 @@ export default function App() {
                     ))}
                   </div>
                 </div>
-                {/* 文件夹信息 */}
                 <div className="px-1">
                   <div className="text-xs font-bold text-slate-200 truncate group-hover:text-blue-400 transition-colors">{folder}</div>
                   <div className="text-[10px] font-mono text-slate-500 mt-0.5 uppercase tracking-tighter">{files.length} 份资源</div>
@@ -280,23 +277,33 @@ export default function App() {
             ))}
           </div>
 
-          {/* 最近活动 */}
+          {/* 最近同步区域：重点优化 */}
           <div className="space-y-4 pt-6 border-t border-white/5">
             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" strokeWidth="2"/></svg>
-              最近同步
+              最近同步活动 (Quick Copy)
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {recentFiles.map((file, idx) => (
-                <div key={idx} className="glass-panel p-3 rounded-2xl flex gap-3 border border-white/5 group hover:bg-slate-900/40 transition-all cursor-default">
-                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-950 shrink-0 border border-white/5">
-                    <img src={file.url} className="w-full h-full object-cover" />
+                <div key={idx} className="glass-panel p-4 rounded-2xl flex gap-4 border border-white/5 group hover:bg-slate-900/40 hover:border-white/10 transition-all cursor-default shadow-lg shadow-black/20">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-950 shrink-0 border border-white/5 shadow-inner">
+                    <img src={file.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                   </div>
-                  <div className="flex-1 min-w-0 flex flex-col justify-center">
-                    <p className="text-[11px] font-bold text-slate-200 truncate">{file.name}</p>
-                    <div className="flex gap-3 mt-2">
-                      <button onClick={(e) => copyToClipboard(e, file.url)} className="text-[9px] font-bold text-blue-400 hover:text-blue-300 uppercase tracking-tighter">链接</button>
-                      <button onClick={(e) => copyToClipboard(e, `![${file.name}](${window.location.origin}${file.url})`)} className="text-[9px] font-bold text-slate-500 hover:text-slate-400 uppercase tracking-tighter">MD</button>
+                  <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                    <p className="text-[12px] font-bold text-slate-200 truncate leading-tight group-hover:text-blue-300 transition-colors">{file.name}</p>
+                    <div className="flex gap-2.5 mt-2">
+                      <button 
+                        onClick={(e) => copyToClipboard(e, file.url)} 
+                        className="flex-1 text-[11px] font-black text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-lg py-1.5 transition-all active:scale-95 uppercase tracking-wide"
+                      >
+                        URL
+                      </button>
+                      <button 
+                        onClick={(e) => copyToClipboard(e, `![${file.name}](${window.location.origin}${file.url})`)} 
+                        className="flex-1 text-[11px] font-black text-purple-400 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-lg py-1.5 transition-all active:scale-95 uppercase tracking-wide"
+                      >
+                        MD
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -312,8 +319,8 @@ export default function App() {
           <div className="max-w-[1400px] mx-auto w-full flex flex-col h-full">
             <header className="flex justify-between items-end mb-8 border-b border-white/10 pb-6">
               <div>
-                <button onClick={() => setExpandedFolder(null)} className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest mb-4">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 19l-7-7m0 0l7-7m-7 7h18" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                <button onClick={() => setExpandedFolder(null)} className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-xs font-bold uppercase tracking-widest mb-4 group">
+                  <svg className="w-4 h-4 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M10 19l-7-7m0 0l7-7m-7 7h18" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   返回主页
                 </button>
                 <h3 className="text-3xl font-black tracking-tight flex items-center gap-3">
@@ -330,12 +337,8 @@ export default function App() {
                     <div className="aspect-square rounded-2xl overflow-hidden bg-slate-900 border border-white/5 relative">
                       <img src={file.url} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" loading="lazy" />
                       <div className="absolute inset-0 bg-slate-950/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity gap-2">
-                        <button onClick={(e) => copyToClipboard(e, file.url)} className="p-2 bg-blue-600 rounded-lg text-white hover:bg-blue-500 transition-colors shadow-lg">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3" strokeWidth="2"/></svg>
-                        </button>
-                        <button onClick={(e) => copyToClipboard(e, `![${file.name}](${window.location.origin}${file.url})`)} className="p-2 bg-slate-700 rounded-lg text-white hover:bg-slate-600 transition-colors shadow-lg">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 7h10M7 12h10M7 17h10" strokeWidth="2" strokeLinecap="round"/></svg>
-                        </button>
+                        <button onClick={(e) => copyToClipboard(e, file.url)} className="p-2.5 bg-blue-600 rounded-xl text-white hover:bg-blue-500 transition-all shadow-lg active:scale-90 font-bold text-[10px]">URL</button>
+                        <button onClick={(e) => copyToClipboard(e, `![${file.name}](${window.location.origin}${file.url})`)} className="p-2.5 bg-purple-600 rounded-xl text-white hover:bg-purple-500 transition-all shadow-lg active:scale-90 font-bold text-[10px]">MD</button>
                       </div>
                     </div>
                     <div className="px-1">
