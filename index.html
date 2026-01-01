@@ -1,43 +1,32 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LuminaDrive | Personal Image Hosting</title>
+    <title>LuminaDrive | 个人智享图床</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #f8fafc; margin: 0; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .gradient-text { background: linear-gradient(135deg, #38bdf8 0%, #818cf8 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        body { font-family: 'Inter', sans-serif; background-color: #030712; color: #f9fafb; }
+        .glass-panel { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .gradient-text { background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 10px; }
     </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@19.0.0",
-    "react-dom": "https://esm.sh/react-dom@19.0.0",
-    "react-dom/client": "https://esm.sh/react-dom@19.0.0/client",
-    "@google/genai": "https://esm.sh/@google/genai@1.34.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "react/": "https://esm.sh/react@^19.2.3/"
-  }
-}
-</script>
-</head>
-<body>
-    <div id="root">
-        <div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; color: #64748b;">
-            <div style="font-size: 1.5rem; margin-bottom: 1rem; color: #38bdf8; font-weight: bold;">LuminaDrive</div>
-            <div style="font-size: 0.875rem; letter-spacing: 0.1em;" id="status-text">INITIALIZING ENGINE...</div>
-        </div>
-    </div>
-    <script type="module">
-        // 增加随机数防止浏览器缓存之前的旧脚本
-        const version = Date.now();
-        import(`/index.tsx?v=${version}`).catch(err => {
-            console.error("Critical Load Error:", err);
-            document.getElementById('status-text').innerHTML = '<span style="color:#ef4444">LOAD ERROR: CHECK CONSOLE</span>';
-        });
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@19.2.3",
+        "react-dom/": "https://esm.sh/react-dom@19.2.3/",
+        "react/": "https://esm.sh/react@19.2.3/",
+        "@google/genai": "https://esm.sh/@google/genai"
+      }
+    }
     </script>
+</head>
+<body class="custom-scrollbar">
+    <div id="root"></div>
+    <script type="module" src="./index.tsx"></script>
 </body>
 </html>
