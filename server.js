@@ -16,7 +16,34 @@ if (!fs.existsSync(STORAGE_ROOT)) {
 app.use(cors());
 app.use(express.json());
 
+// --- 核心工具函数 ---
+
 const sanitizePath = (p) => p.replace(/\.\./g, '').replace(/[\\:]/g, '/').replace(/\/+/g, '/').replace(/^\//, '');
+
+/**
+ * 强力清洗文件名：只保留小写字母、数字和连字符，截断长度，收缩重复
+ */
+const cleanFileName = (originalName) => {
+  const ext = path.extname(originalName).toLowerCase();
+  let baseName = path.basename(originalName, ext);
+
+  // 1. 处理非 ASCII (如中文) 并替换特殊符号
+  // 逻辑：将非 a-z0-9 的所有内容替换为 -
+  let cleaned = baseName
+    .replace(/[^a-z0-9]/gi, '-')
+    .toLowerCase()
+    // 2. 收缩连续的 -
+    .replace(/-+/g, '-')
+    // 3. 去除首尾的 -
+    .replace(/^-|-$/g, '');
+
+  // 4. 如果清洗后为空 (比如全是中文)，降级为 asset
+  if (!cleaned) cleaned = 'asset';
+
+  // 5. 长度截断 (50个字符以内)
+  return cleaned.substring(0, 50);
+};
+
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
 const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg'];
 
@@ -63,9 +90,10 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    // 批量上传时不使用单一 slug，使用原名基础上的时间戳化
-    const baseName = path.basename(file.originalname, ext).replace(/[^a-z0-9]/gi, '-').toLowerCase();
-    cb(null, `${baseName}-${Date.now()}${ext}`);
+    const safeName = cleanFileName(file.originalname);
+    // 批量上传通过 时间戳+随机数 彻底解决冲突
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E4);
+    cb(null, `${safeName}-${uniqueSuffix}${ext}`);
   }
 });
 
@@ -86,29 +114,41 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 } 
 });
 
-// 单文件上传路由 (保留用于单选及 Slug 情况)
+// 单文件上传路由
 app.post('/api/upload', (req, res) => {
-  // 单个文件可能需要 slug，这里特殊处理一下 storage 的 filename 是比较麻烦的，
-  // 为了简单起见，我们直接复用 upload 逻辑，如果 body 带有 slug，就在这里重命名
   upload.single('file')(req, res, (err) => {
     if (err) return res.status(400).json({ success: false, error: err.message });
     if (!req.file) return res.status(400).json({ success: false, error: '未接收到文件' });
 
-    // 如果用户提供了 slug，我们在存储后重命名它（单文件专用）
+    // 处理 Slug 自定义逻辑
+    let finalPath = req.file.path;
+    let finalName = req.file.filename;
+
     if (req.body.slug) {
       const ext = path.extname(req.file.path);
-      const newName = req.body.slug.endsWith(ext) ? sanitizePath(req.body.slug) : sanitizePath(req.body.slug) + ext;
+      // 对用户输入的 slug 也进行一次清洗，防止恶意输入
+      const cleanSlug = cleanFileName(req.body.slug);
+      const newName = cleanSlug + ext;
       const newPath = path.join(path.dirname(req.file.path), newName);
       try {
-        fs.renameSync(req.file.path, newPath);
-        req.file.path = newPath;
-        req.file.filename = newName;
+        if (fs.existsSync(newPath)) {
+            // 如果别名冲突，自动加时间戳
+            const conflictName = `${cleanSlug}-${Date.now()}${ext}`;
+            const conflictPath = path.join(path.dirname(req.file.path), conflictName);
+            fs.renameSync(req.file.path, conflictPath);
+            finalPath = conflictPath;
+            finalName = conflictName;
+        } else {
+            fs.renameSync(req.file.path, newPath);
+            finalPath = newPath;
+            finalName = newName;
+        }
       } catch (e) {
         console.error("Rename error", e);
       }
     }
 
-    const relativePath = req.file.path.replace(STORAGE_ROOT, '').replace(/\\/g, '/');
+    const relativePath = finalPath.replace(STORAGE_ROOT, '').replace(/\\/g, '/');
     return res.json({ success: true, url: `/storage${relativePath}` });
   });
 });
@@ -160,4 +200,4 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 LuminaDrive v3.6.0 [Bulk Support] on ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 LuminaDrive v3.7.0 [Smart Filename] on ${PORT}`));

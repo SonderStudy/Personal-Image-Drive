@@ -23,6 +23,17 @@ export default function App() {
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 前端同步清洗逻辑
+  const cleanSlug = (name: string) => {
+    const baseName = name.split('.')[0];
+    return baseName
+      .replace(/[^a-z0-9]/gi, '-')
+      .toLowerCase()
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .substring(0, 50);
+  };
+
   const fetchFiles = async () => {
     try {
       const res = await fetch('/api/files');
@@ -57,7 +68,6 @@ export default function App() {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
-    // 清除旧预览以防内存泄漏
     selectedFiles.forEach(sf => URL.revokeObjectURL(sf.preview));
 
     const newSelected = files.map(file => ({
@@ -67,12 +77,10 @@ export default function App() {
 
     setSelectedFiles(newSelected);
     
-    // 如果是单文件，默认填充 slug
     if (files.length === 1) {
-      const safeName = files[0].name.split('.')[0].toLowerCase().replace(/[^a-z0-9]/g, '-');
-      setSlug(safeName);
+      setSlug(cleanSlug(files[0].name));
     } else {
-      setSlug(''); // 批量上传时不使用 slug
+      setSlug('');
     }
   };
 
@@ -87,7 +95,6 @@ export default function App() {
 
     try {
       if (!isBulk) {
-        // 单文件上传
         formData.append('file', selectedFiles[0].file);
         formData.append('slug', slug);
         setUploadProgress('正在同步 1 张资源...');
@@ -95,7 +102,6 @@ export default function App() {
         const result = await response.json();
         if (!result.success) throw new Error(result.error);
       } else {
-        // 批量上传
         selectedFiles.forEach(sf => formData.append('files', sf.file));
         setUploadProgress(`正在同步 ${selectedFiles.length} 张资源...`);
         const response = await fetch('/api/upload-bulk', { method: 'POST', body: formData });
@@ -127,7 +133,6 @@ export default function App() {
       btn.innerText = 'OK!';
       setTimeout(() => btn.innerText = originalText, 1500);
     } catch (err) {
-      // Fallback
       const textArea = document.createElement("textarea");
       textArea.value = finalCopyText;
       document.body.appendChild(textArea);
@@ -149,13 +154,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen p-6 md:p-12 max-w-[1600px] mx-auto flex flex-col gap-8">
-      {/* 顶部导航 */}
       <nav className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-white/5">
         <div>
           <h1 className="text-3xl font-black tracking-tighter gradient-text">WildSaltDrive</h1>
           <div className="flex items-center gap-2 mt-1 font-mono text-[10px] text-slate-500 uppercase">
             <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-            Cloud Node Management v3.6.0
+            Cloud Node Management v3.7.0
           </div>
         </div>
         <div className="flex gap-4">
@@ -166,7 +170,6 @@ export default function App() {
       </nav>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-start">
-        {/* 左侧：上传区域 */}
         <section className="xl:col-span-4 sticky top-12">
           <div className="glass-panel rounded-[2.5rem] p-8 border border-white/10 shadow-2xl">
             <div className="flex justify-between items-center mb-6">
@@ -186,7 +189,6 @@ export default function App() {
               )}
             </div>
 
-            {/* 上传交互区 */}
             <div 
               onClick={() => fileInputRef.current?.click()}
               className={`group relative rounded-[2rem] border-2 border-dashed transition-all cursor-pointer overflow-hidden bg-slate-950/50 flex flex-col items-center justify-center
@@ -196,8 +198,8 @@ export default function App() {
                 <div className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
                   <svg className="w-6 h-6 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 002-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                 </div>
-                <span className="text-xs text-slate-500 font-medium tracking-wide">
-                  {selectedFiles.length > 0 ? '继续添加图片' : '点击或拖拽上传图片'}
+                <span className="text-xs text-slate-500 font-medium tracking-wide text-center px-4">
+                  {selectedFiles.length > 0 ? '继续添加图片' : '点击上传 \n(自动清洗文件名)'}
                 </span>
               </div>
               <input 
@@ -210,7 +212,6 @@ export default function App() {
               />
             </div>
 
-            {/* 待上传列表预览 */}
             {selectedFiles.length > 0 && (
               <div className="mt-6 space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">待上传队列 ({selectedFiles.length})</div>
@@ -236,11 +237,10 @@ export default function App() {
                 <input type="text" value={prefix} onChange={(e) => setPrefix(e.target.value)} className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 ring-blue-500/50 outline-none font-mono" />
               </div>
               
-              {/* 仅单选时显示别名输入 */}
               {selectedFiles.length === 1 && (
                 <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-300">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">资源别名 (Slug)</label>
-                  <input type="text" value={slug} onChange={(e) => setSlug(e.target.value)} className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 ring-blue-500/50 outline-none font-mono" placeholder="可选自定义文件名" />
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1">自定义别名 (URL 安全)</label>
+                  <input type="text" value={slug} onChange={(e) => setSlug(e.target.value)} className="w-full bg-slate-900/50 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:ring-1 ring-blue-500/50 outline-none font-mono" placeholder="无需后缀" />
                 </div>
               )}
             </div>
@@ -257,9 +257,7 @@ export default function App() {
           </div>
         </section>
 
-        {/* 右侧：管理区域 */}
         <section className="xl:col-span-8 space-y-8">
-          {/* 分组列表 */}
           <div className="space-y-4">
             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" strokeWidth="2"/></svg>
@@ -294,7 +292,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* 最近同步 */}
           <div className="space-y-4 pt-6 border-t border-white/5">
             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" strokeWidth="2"/></svg>
@@ -310,7 +307,7 @@ export default function App() {
                     <p className="text-[11px] font-bold text-slate-200 truncate">{file.name}</p>
                     <p className="text-[9px] text-slate-500 font-mono truncate mt-0.5">{file.path}</p>
                     <div className="flex gap-3 mt-2">
-                      <button onClick={(e) => copyToClipboard(e, file.url)} className="text-[9px] font-bold text-blue-400 hover:text-blue-300 uppercase tracking-tighter">复制连接</button>
+                      <button onClick={(e) => copyToClipboard(e, file.url)} className="text-[9px] font-bold text-blue-400 hover:text-blue-300 uppercase tracking-tighter">复制链接</button>
                       <button onClick={(e) => copyToClipboard(e, `![${file.name}](${window.location.origin}${file.url})`)} className="text-[9px] font-bold text-slate-500 hover:text-slate-400 uppercase tracking-tighter">Markdown</button>
                     </div>
                   </div>
