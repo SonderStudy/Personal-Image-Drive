@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 3003;
 const STORAGE_ROOT = path.join(__dirname, 'storage');
 
-// 1. 目录准备
+// 1. Directory Setup
 const ensureDir = (dirPath) => {
   if (!fs.existsSync(dirPath)) {
     try {
@@ -29,37 +29,41 @@ const publicPath = fs.existsSync(path.join(__dirname, 'public'))
   ? path.join(__dirname, 'public') 
   : __dirname;
 
-// 2. [关键] 即时转译中间件：拦截 .tsx 和 .ts 请求
-app.get(['*.tsx', '*.ts'], (req, res, next) => {
-  const filePath = path.join(publicPath, req.path);
-  
-  if (fs.existsSync(filePath)) {
-    try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      
-      // 使用 esbuild 在内存中瞬间完成转译
-      const result = esbuild.transformSync(content, {
-        loader: req.path.endsWith('.ts') ? 'ts' : 'tsx',
-        format: 'esm',
-        target: 'es2020',
-        // 自动注入 API_KEY 环境变量到前端
-        define: {
-          'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
-        }
-      });
+// 2. [REFINED] Robust Transpilation Middleware
+// This intercepts any .tsx or .ts requests and compiles them to JS on the fly
+app.use((req, res, next) => {
+  const ext = path.extname(req.path);
+  if (ext === '.tsx' || ext === '.ts') {
+    const filePath = path.join(publicPath, req.path);
+    
+    if (fs.existsSync(filePath)) {
+      try {
+        const content = fs.readFileSync(filePath, 'utf8');
+        
+        // Use esbuild for high-speed transpilation
+        const result = esbuild.transformSync(content, {
+          loader: ext === '.ts' ? 'ts' : 'tsx',
+          format: 'esm',
+          target: 'es2020',
+          jsx: 'react', // Explicitly handle JSX
+          define: {
+            'process.env.API_KEY': JSON.stringify(process.env.API_KEY || '')
+          }
+        });
 
-      res.set('Content-Type', 'application/javascript');
-      res.send(result.code);
-    } catch (err) {
-      console.error(`❌ Transpile error (${req.path}):`, err.message);
-      res.status(500).send(`Transpile Error: ${err.message}`);
+        // CRITICAL: Set the correct MIME type for ES Modules
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        return res.send(result.code);
+      } catch (err) {
+        console.error(`❌ Transpile error on ${req.path}:`, err);
+        return res.status(500).send(`/* Transpile Error: ${err.message} */`);
+      }
     }
-  } else {
-    next();
   }
+  next();
 });
 
-// 3. 上传逻辑
+// 3. Upload Logic
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const targetDir = path.join(STORAGE_ROOT, req.body.pathPrefix || 'img');
@@ -84,11 +88,12 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
   });
 });
 
-// 4. 静态资源服务
+// 4. Static and SPA routing
 app.use('/storage', express.static(STORAGE_ROOT));
 app.use(express.static(publicPath));
 
 app.get('*', (req, res) => {
+  // If request is not for a specific file, serve index.html for SPA support
   const indexPath = path.join(publicPath, 'index.html');
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
@@ -98,5 +103,12 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server on http://localhost:${PORT} with dynamic TSX support`);
+  console.log(`
+  -------------------------------------------------------
+  🚀 LuminaDrive Backend Active
+  📍 URL: http://0.0.0.0:${PORT}
+  🛠 Mode: On-the-fly TSX/TS Transpilation
+  📂 Storage: ${STORAGE_ROOT}
+  -------------------------------------------------------
+  `);
 });
