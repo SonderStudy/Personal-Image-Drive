@@ -9,55 +9,93 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 const STORAGE_ROOT = path.join(__dirname, 'storage');
 
+// 确保存储根目录存在
+if (!fs.existsSync(STORAGE_ROOT)) {
+  fs.mkdirSync(STORAGE_ROOT, { recursive: true });
+}
+
 app.use(cors());
 app.use(express.json());
 
-// 配置存储引擎
+// 配置 Multer 存储
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // 从请求体获取 pathPrefix (例如: img/2025/vacation)
+    // 调试日志：检查字段是否在文件之前到达
+    console.log('Receiving upload for pathPrefix:', req.body.pathPrefix);
+    
     const pathPrefix = req.body.pathPrefix || 'uploads';
     const targetDir = path.join(STORAGE_ROOT, pathPrefix);
     
-    // 自动建立对应的文件夹 (recursive: true 支持多级创建)
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
+    try {
+      if (!fs.existsSync(targetDir)) {
+        console.log('Creating directory:', targetDir);
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+      cb(null, targetDir);
+    } catch (err) {
+      console.error('Directory creation failed:', err);
+      cb(err);
     }
-    cb(null, targetDir);
   },
   filename: function (req, file, cb) {
-    // 使用用户定义的 slug 作为文件名，如果没有则保持原名
-    const slug = req.body.slug || Date.now() + '-' + file.originalname;
+    const slug = req.body.slug || (Date.now() + '-' + file.originalname);
     cb(null, slug);
   }
 });
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 20 * 1024 * 1024 } // 限制 20MB
+  limits: { fileSize: 20 * 1024 * 1024 } // 20MB
 });
 
 // 上传接口
-app.post('/api/upload', upload.single('image'), (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: 'No file uploaded' });
-  }
-
-  // 返回成功信息及文件访问路径
-  res.json({
-    message: 'Upload successful',
-    file: {
-      path: req.file.path.replace(STORAGE_ROOT, ''),
-      size: req.file.size,
-      filename: req.file.filename
+app.post('/api/upload', (req, res, next) => {
+  upload.single('image')(req, res, function (err) {
+    if (err instanceof multer.MulterError) {
+      console.error('Multer Error:', err);
+      return res.status(500).json({ error: `Upload error: ${err.message}` });
+    } else if (err) {
+      console.error('Unknown Error during upload:', err);
+      return res.status(500).json({ error: `Internal error: ${err.message}` });
     }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file found in request' });
+    }
+
+    console.log('Successfully saved:', req.file.path);
+    res.json({
+      message: 'Upload successful',
+      file: {
+        path: req.file.path.replace(STORAGE_ROOT, ''),
+        filename: req.file.filename
+      }
+    });
   });
 });
 
-// 静态资源服务 (生产环境建议用 Nginx)
+// 静态文件服务 - 用于查看已上传图片
 app.use('/storage', express.static(STORAGE_ROOT));
 
-app.listen(PORT, () => {
-  console.log(`LuminaDrive Backend running at http://localhost:${PORT}`);
-  console.log(`Storage root: ${STORAGE_ROOT}`);
+// 静态文件服务 - 用于部署前端项目 (打包后的 dist 或 public)
+const PUBLIC_DIR = path.join(__dirname, 'public');
+if (fs.existsSync(PUBLIC_DIR)) {
+  app.use(express.static(PUBLIC_DIR));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
+  });
+}
+
+// 全局错误捕获器
+app.use((err, req, res, next) => {
+  console.error('Global Error Handler:', err);
+  res.status(500).json({ error: 'Critical server error occurred' });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`-------------------------------------------`);
+  console.log(`LuminaDrive Backend is LIVE!`);
+  console.log(`Port: ${PORT}`);
+  console.log(`Storage: ${STORAGE_ROOT}`);
+  console.log(`-------------------------------------------`);
 });

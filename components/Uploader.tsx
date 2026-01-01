@@ -37,7 +37,8 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
       const reader = new FileReader();
       reader.onloadend = () => {
         setPreview(reader.result as string);
-        const baseSlug = selectedFile.name.split('.')[0].toLowerCase().replace(/[^a-z0-9]/g, '-');
+        // 生成默认 slug: 移除扩展名并转为 URL 友好格式
+        const baseSlug = selectedFile.name.split('.').slice(0, -1).join('.').toLowerCase().replace(/[^a-z0-9]/g, '-');
         setSlug(baseSlug);
       };
       reader.readAsDataURL(selectedFile);
@@ -46,7 +47,11 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
 
   const cleanPath = (p: string) => p.replace(/^\/+|\/+$/g, '');
   const cleanDomain = (d: string) => d.replace(/\/+$/, '');
-  const finalUrlPreview = `https://${cleanDomain(baseDomain)}/${cleanPath(pathPrefix)}/${slug}`;
+  
+  // 实时预览生成后的 URL
+  const fileExtension = file ? file.name.split('.').pop() : 'jpg';
+  const finalSlug = slug.includes('.') ? slug : `${slug}.${fileExtension}`;
+  const finalUrlPreview = `https://${cleanDomain(baseDomain)}/${cleanPath(pathPrefix)}/${finalSlug}`;
 
   const handleUpload = async () => {
     if (!file || !preview || !slug) return;
@@ -55,7 +60,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
     try {
       let metadata = { title: file.name, tags: ['manual'], description: '' };
 
-      // 1. AI 智能分析 (如果开启)
+      // 1. AI 智能分析
       if (useAI && hasKey) {
         try {
           const aiResult = await analyzeImage(preview, file.name);
@@ -65,41 +70,42 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
             description: aiResult.description || ''
           };
         } catch (aiError: any) {
-          if (aiError.message?.includes("Requested entity was not found") && window.aistudio) {
-            setHasKey(false);
-            await window.aistudio.openSelectKey();
-            setHasKey(true);
-          }
+          console.warn("AI Analysis skipped or failed:", aiError);
         }
       }
 
-      // 2. 尝试向 VPS 后端发送文件
-      // 注意：这里尝试请求本地部署的 API，如果失败则仅进行前端模拟
+      // 2. 向 VPS 后端发送文件
       try {
         const formData = new FormData();
-        formData.append('image', file);
+        // 重要：必须在 append 'image' 之前 append 文本字段
+        // 这样 Multer 的 diskStorage 才能在确定 destination 时通过 req.body 拿到这些值
         formData.append('pathPrefix', cleanPath(pathPrefix));
-        formData.append('slug', slug);
+        formData.append('slug', finalSlug);
+        formData.append('image', file);
 
         const response = await fetch('/api/upload', {
           method: 'POST',
           body: formData
         });
 
-        if (response.ok) {
-          console.log("File saved to VPS storage successfully");
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Upload to VPS failed');
         }
       } catch (e) {
-        console.warn("No active backend found, performing frontend-only simulation.");
+        console.error("VPS Upload Error:", e);
+        alert("VPS 上传失败，请检查后端服务是否运行或查看 F12 网络控制台。");
+        setIsUploading(false);
+        return;
       }
       
       const newImage: UploadedImage = {
         id: crypto.randomUUID(),
         name: metadata.title,
-        slug: slug,
+        slug: finalSlug,
         pathPrefix: cleanPath(pathPrefix),
         baseDomain: cleanDomain(baseDomain),
-        url: preview,
+        url: preview, // 这里保留本地预览图，实际生产中可改为后端返回的真实 URL
         size: file.size,
         type: file.type,
         createdAt: Date.now(),
@@ -157,7 +163,6 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
                   type="checkbox" 
                   checked={useAI} 
                   onChange={(e) => setUseAI(e.target.checked)}
-                  disabled={!hasKey}
                   className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-blue-600 focus:ring-blue-500/30"
                 />
                 <span className={`text-[10px] font-bold uppercase tracking-wider ${useAI ? 'text-blue-400' : 'text-slate-500'}`}>
@@ -175,7 +180,6 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
                 value={baseDomain}
                 onChange={(e) => setBaseDomain(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:ring-2 focus:ring-blue-500/20 focus:outline-none placeholder:text-slate-700 text-sm"
-                placeholder="e.g. pic.wildsalt.me"
               />
             </div>
             <div>
@@ -185,26 +189,25 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
                 value={pathPrefix}
                 onChange={(e) => setPathPrefix(e.target.value.replace(/[^a-z0-9\/]/g, '-'))}
                 className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:ring-2 focus:ring-blue-500/20 focus:outline-none placeholder:text-slate-700 text-sm"
-                placeholder="e.g. img/2025/game"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Custom Slug (File ID)</label>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Custom Slug (Filename)</label>
             <input 
               type="text"
               value={slug}
-              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '-'))}
+              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9.-]/g, '-'))}
               className="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 focus:ring-2 focus:ring-blue-500/20 focus:outline-none text-sm"
-              placeholder="image-name"
+              placeholder="e.g. my-travel-photo"
             />
           </div>
 
           <div className="bg-blue-500/5 border border-blue-500/20 rounded-xl p-4 transition-all">
             <div className="flex justify-between items-center mb-1">
               <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Final URL Preview</span>
-              <span className="text-[10px] text-slate-500">Auto-generated</span>
+              <span className="text-[10px] text-slate-500 uppercase">Will be served by Nginx</span>
             </div>
             <p className="text-xs font-mono text-slate-300 break-all select-all cursor-text bg-slate-950/40 p-2 rounded">
               {finalUrlPreview}
@@ -218,7 +221,7 @@ export const Uploader: React.FC<UploaderProps> = ({ onUploadComplete }) => {
               disabled={!file || !slug}
               className="flex-1 py-4 text-sm font-bold shadow-2xl shadow-blue-500/20"
             >
-              Confirm & Extract Link
+              Upload & Get Link
             </Button>
             <Button variant="ghost" onClick={reset} disabled={isUploading} className="px-8 py-4">
               Cancel
