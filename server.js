@@ -16,9 +16,7 @@ if (!fs.existsSync(STORAGE_ROOT)) {
 app.use(cors());
 app.use(express.json());
 
-app.use('/storage', express.static(STORAGE_ROOT));
-app.use(express.static(__dirname));
-
+// 1. TSX/TS 动态转译中间件 (必须置于顶部，拦截所有对代码文件的请求)
 app.use((req, res, next) => {
   if (req.path.endsWith('.tsx') || req.path.endsWith('.ts')) {
     const filePath = path.join(__dirname, req.path);
@@ -31,9 +29,10 @@ app.use((req, res, next) => {
           target: 'es2020',
           jsx: 'transform'
         });
-        res.setHeader('Content-Type', 'application/javascript');
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
         return res.send(result.code);
       } catch (e) {
+        console.error('Transpilation Error:', e);
         return res.status(500).send(`Transpilation Error: ${e.message}`);
       }
     }
@@ -41,16 +40,17 @@ app.use((req, res, next) => {
   next();
 });
 
+// 2. 静态资源服务 (在代码拦截之后)
+app.use('/storage', express.static(STORAGE_ROOT));
+app.use(express.static(__dirname));
+
 const sanitizePath = (p) => p.replace(/\.\./g, '').replace(/[\\:]/g, '/').replace(/\/+/g, '/').replace(/^\//, '');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // 关键点：req.body 此时包含了在 file 之前 appended 的所有字段
+    // 此时 req.body 包含 pathPrefix，因为前端已调整字段顺序
     const safePrefix = sanitizePath(req.body.pathPrefix || 'uploads');
     const targetDir = path.join(STORAGE_ROOT, safePrefix);
-    
-    console.log(`[Upload] Path: ${safePrefix}, Target: ${targetDir}`);
-    
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
@@ -89,5 +89,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 LuminaDrive v3.2 is running at http://localhost:${PORT}`);
+  console.log(`🚀 LuminaDrive v3.2.1 is running at http://localhost:${PORT}`);
 });
