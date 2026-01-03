@@ -3,7 +3,7 @@
   "short_name": "ImageEngine",
   "description": "个人隐私智享图床与相册管理引擎",
   "start_url": "/?utm_source=pwa", 
-  "id": "/engine-pwa", 
+  "id": "/?engine-pwa", 
   "display": "standalone",
   "background_color": "#020617",
   "theme_color": "#020617",
