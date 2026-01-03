@@ -2,7 +2,9 @@ const CACHE_NAME = 'wildsaltdrive-v1';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
+  '/icon/icon_x192.png',
+  '/icon/icon_x512.png'
 ];
 
 // 安装时预缓存
