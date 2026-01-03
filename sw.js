@@ -1,55 +1,56 @@
-const CACHE_NAME = 'wildsaltdrive-v1';
+const CACHE_NAME = 'wildsaltdrive-v2'; // 建议每次修改 sw.js 都升一下版本号
 const ASSETS_TO_CACHE = [
-  '/',
+  '/', // 必须缓存根路径
   '/index.html',
   '/manifest.json',
-  '/icon/icon_x192.png',
-  '/icon/icon_x512.png'
+  '/icons/icon-192.png', // 请确认这个路径和文件名在服务器上真实存在！
+  '/icons/icon-512.png'
 ];
 
-// 安装时预缓存
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      // 使用 map 逐个添加，防止其中一个 404 导致全部失败
+      return Promise.allSettled(
+        ASSETS_TO_CACHE.map(url => cache.add(url))
+      );
     })
   );
   self.skipWaiting();
 });
 
-// 激活并清理旧缓存
-self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((name) => {
-          if (name !== CACHE_NAME) return caches.delete(name);
-        })
-      );
-    })
-  );
-  self.clients.claim();
-});
+// 激活逻辑保持不变...
 
-// 拦截请求：网络优先，失败后回退到缓存
 self.addEventListener('fetch', (event) => {
+  // 只处理 GET 请求
   if (event.request.method !== 'GET') return;
   
-  // 对于 API 请求，始终网络优先
-  if (event.request.url.includes('/api/')) {
-    event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+  // 排除掉外部统计脚本或上传接口，不进行缓存
+  if (event.request.url.includes('api.wildsalt.me') || event.request.url.includes('/upload')) {
     return;
   }
 
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const clonedResponse = response.clone();
-        caches.open(CACHE_NAME).then((cache) => {
-          cache.put(event.request, clonedResponse);
-        });
+        // 如果请求成功，动态存入缓存
+        if (response.status === 200) {
+          const clonedResponse = response.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, clonedResponse);
+          });
+        }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => {
+        // 离线时回退到缓存
+        return caches.match(event.request).then(cachedResponse => {
+          if (cachedResponse) return cachedResponse;
+          // 如果是页面请求但没缓存，可以返回一个统一的离线 HTML
+          if (event.request.mode === 'navigate') {
+            return caches.match('/');
+          }
+        });
+      })
   );
 });
